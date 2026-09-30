@@ -24,6 +24,7 @@ import (
 
 	"github.com/sat0ken/tinygo-cyd/hal"
 	"github.com/sat0ken/tinygo-cyd/platform"
+	"github.com/sat0ken/tinygo-cyd/slideshow"
 	"tinygo.org/x/tinyfont"
 	"tinygo.org/x/tinyfont/proggy"
 )
@@ -37,8 +38,8 @@ func main() {
 	}
 	pack, err := openPack()
 	if err == nil {
-		var s *Show
-		if s, err = NewShow(d, t, pack); err == nil {
+		var s *slideshow.Show
+		if s, err = slideshow.NewShow(d, t, slideshow.PackSource{Pack: pack}); err == nil {
 			run(s)
 		}
 	}
@@ -48,7 +49,7 @@ func main() {
 	platform.Halt()
 }
 
-func run(s *Show) {
+func run(s *slideshow.Show) {
 	if err := s.Start(); err != nil {
 		println("draw:", err.Error())
 	}

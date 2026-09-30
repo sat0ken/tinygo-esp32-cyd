@@ -1,4 +1,8 @@
-package main
+// Package slideshow shows full-screen RGB565 images one after another with
+// transitions, a caption and touch control. Where the images come from is a
+// Source: a slidepack in flash or embedded (examples/05_slideshow), or files
+// on a microSD card (examples/06_sdslideshow).
+package slideshow
 
 import (
 	"errors"
@@ -8,7 +12,6 @@ import (
 	"time"
 
 	"github.com/sat0ken/tinygo-cyd/hal"
-	"github.com/sat0ken/tinygo-cyd/slidepack"
 	"tinygo.org/x/tinyfont"
 	"tinygo.org/x/tinyfont/proggy"
 )
@@ -23,11 +26,11 @@ type bitmapDrawer interface {
 type Transition int
 
 const (
-	Cut       Transition = iota // draw at once
-	WipeDown                    // top to bottom, 8 lines at a time
-	WipeRight                   // left to right, 40 columns at a time
-	Blinds                      // 8 bands opening line by line
-	numTransitions
+	Cut            Transition = iota // draw at once
+	WipeDown                         // top to bottom, 8 lines at a time
+	WipeRight                        // left to right, 40 columns at a time
+	Blinds                           // 8 bands opening line by line
+	NumTransitions                   // number of transitions
 )
 
 func (t Transition) String() string {
@@ -42,16 +45,17 @@ const (
 
 // Show is a slide show of the full-screen RGB565 images of a slidepack.
 type Show struct {
-	d     hal.Display
-	bd    bitmapDrawer
-	t     hal.Touch
-	w, h  int16
-	pack  *slidepack.Pack
-	files []io.ReaderAt
-	names []string
+	d    hal.Display
+	bd   bitmapDrawer
+	t    hal.Touch
+	w, h int16
+	src  Source
+	curR io.ReaderAt // pixels of the slide on screen
 
-	cur      int
-	next     Transition
+	cur         int
+	next        int          // index into Transitions
+	Transitions []Transition // used in turn; default: all
+
 	paused   bool
 	Interval time.Duration // time each slide is shown
 	Duration time.Duration // duration of a transition
@@ -63,34 +67,29 @@ type Show struct {
 	wasTouch  bool
 
 	buf   []byte              // one chunk: max(wipe lines, wipe columns)
-	sleep func(time.Duration) // replaced in tests
-	now   func() time.Time    // replaced in tests
-	log   func(msg string)    // serial / console log
+	Sleep func(time.Duration) // replaceable for tests
+	Now   func() time.Time    // replaceable for tests
+	Log   func(msg string)    // serial / console log
 }
 
-// NewShow shows the slides of pack, which must match the screen size.
-func NewShow(d hal.Display, t hal.Touch, pack *slidepack.Pack) (*Show, error) {
+// NewShow shows the slides of src, which must match the screen size.
+func NewShow(d hal.Display, t hal.Touch, src Source) (*Show, error) {
 	bd, ok := d.(bitmapDrawer)
 	if !ok {
 		return nil, errors.New("slideshow: display has no DrawRGBBitmap8")
 	}
+	if src.Len() == 0 {
+		return nil, ErrNoSlides
+	}
 	w, h := d.Size()
-	if pack.Width != int(w) || pack.Height != int(h) {
-		return nil, errors.New("slideshow: slides are " + strconv.Itoa(pack.Width) + "x" + strconv.Itoa(pack.Height) +
-			", screen is " + strconv.Itoa(int(w)) + "x" + strconv.Itoa(int(h)))
-	}
 	s := &Show{
-		d: d, bd: bd, t: t, w: w, h: h, pack: pack,
-		names:    pack.Names,
-		Interval: 5 * time.Second,
-		Duration: 400 * time.Millisecond,
-		next:     WipeDown,
-		sleep:    time.Sleep,
-		now:      time.Now,
-		log:      func(msg string) { println(msg) },
-	}
-	for i := 0; i < pack.Len(); i++ {
-		s.files = append(s.files, pack.Slide(i))
+		d: d, bd: bd, t: t, w: w, h: h, src: src,
+		Transitions: []Transition{WipeDown, WipeRight, Blinds, Cut},
+		Interval:    5 * time.Second,
+		Duration:    400 * time.Millisecond,
+		Sleep:       time.Sleep,
+		Now:         time.Now,
+		Log:         func(msg string) { println(msg) },
 	}
 	n := int(w) * wipeLines * 2
 	if m := wipeColumns * int(h) * 2; m > n {
@@ -100,8 +99,11 @@ func NewShow(d hal.Display, t hal.Touch, pack *slidepack.Pack) (*Show, error) {
 	return s, nil
 }
 
+// ErrNoSlides is returned by NewShow for an empty Source.
+var ErrNoSlides = errors.New("slideshow: no slides")
+
 // Len returns the number of slides.
-func (s *Show) Len() int { return len(s.files) }
+func (s *Show) Len() int { return s.src.Len() }
 
 // Current returns the index of the slide on screen.
 func (s *Show) Current() int { return s.cur }
@@ -109,23 +111,23 @@ func (s *Show) Current() int { return s.cur }
 // Paused reports whether automatic advance is paused.
 func (s *Show) Paused() bool { return s.paused }
 
-// rows draws lines y0..y0+n-1 of slide i at full width.
-func (s *Show) rows(i int, y0, n int16) error {
+// rows draws lines y0..y0+n-1 of the slide in r at full width.
+func (s *Show) rows(r io.ReaderAt, y0, n int16) error {
 	stride := int64(s.w) * 2
 	b := s.buf[:int(n)*int(stride)]
-	if _, err := s.files[i].ReadAt(b, int64(y0)*stride); err != nil {
+	if _, err := r.ReadAt(b, int64(y0)*stride); err != nil {
 		return err
 	}
 	return s.bd.DrawRGBBitmap8(0, y0, b, s.w, n)
 }
 
-// rect draws the rectangle (x, y, w, h) of slide i. w*h*2 must fit s.buf.
-func (s *Show) rect(i int, x, y, w, h int16) error {
+// rect draws the rectangle (x, y, w, h) of the slide in r. w*h*2 must fit s.buf.
+func (s *Show) rect(r io.ReaderAt, x, y, w, h int16) error {
 	stride := int64(s.w) * 2
 	line := int(w) * 2
-	for r := 0; r < int(h); r++ {
-		off := int64(int(y)+r)*stride + int64(x)*2
-		if _, err := s.files[i].ReadAt(s.buf[r*line:(r+1)*line], off); err != nil {
+	for row := 0; row < int(h); row++ {
+		off := int64(int(y)+row)*stride + int64(x)*2
+		if _, err := r.ReadAt(s.buf[row*line:(row+1)*line], off); err != nil {
 			return err
 		}
 	}
@@ -135,22 +137,25 @@ func (s *Show) rect(i int, x, y, w, h int16) error {
 // Draw shows slide i with transition tr. Each step of the transition is
 // followed by a sleep so that the whole transition takes s.Duration.
 func (s *Show) Draw(i int, tr Transition) error {
-	var err error
+	r, err := s.src.Open(i)
+	if err != nil {
+		return err
+	}
 	switch tr {
 	case Cut:
 		for y := int16(0); y < s.h && err == nil; y += wipeLines {
-			err = s.rows(i, y, min16(wipeLines, s.h-y))
+			err = s.rows(r, y, min16(wipeLines, s.h-y))
 		}
 	case WipeDown:
 		steps := (s.h + wipeLines - 1) / wipeLines
 		for y := int16(0); y < s.h && err == nil; y += wipeLines {
-			err = s.rows(i, y, min16(wipeLines, s.h-y))
+			err = s.rows(r, y, min16(wipeLines, s.h-y))
 			s.step(steps)
 		}
 	case WipeRight:
 		steps := (s.w + wipeColumns - 1) / wipeColumns
 		for x := int16(0); x < s.w && err == nil; x += wipeColumns {
-			err = s.rect(i, x, 0, min16(wipeColumns, s.w-x), s.h)
+			err = s.rect(r, x, 0, min16(wipeColumns, s.w-x), s.h)
 			s.step(steps)
 		}
 	case Blinds:
@@ -158,7 +163,7 @@ func (s *Show) Draw(i int, tr Transition) error {
 		for k := int16(0); k < band && err == nil; k++ {
 			for b := int16(0); b < blindBands && err == nil; b++ {
 				if y := b*band + k; y < s.h {
-					err = s.rows(i, y, 1)
+					err = s.rows(r, y, 1)
 				}
 			}
 			s.step(band)
@@ -168,6 +173,7 @@ func (s *Show) Draw(i int, tr Transition) error {
 		return err
 	}
 	s.cur = i
+	s.curR = r
 	s.caption = false
 	s.d.Display()
 	return nil
@@ -175,7 +181,7 @@ func (s *Show) Draw(i int, tr Transition) error {
 
 func (s *Show) step(steps int16) {
 	s.d.Display()
-	s.sleep(s.Duration / time.Duration(steps))
+	s.Sleep(s.Duration / time.Duration(steps))
 }
 
 func min16(a, b int16) int16 {
@@ -188,7 +194,7 @@ func min16(a, b int16) int16 {
 // Caption box at the bottom left.
 const (
 	capX, capH  = 4, 18
-	captionTime = 2 * time.Second
+	CaptionTime = 2 * time.Second
 )
 
 func (s *Show) capY() int16 { return s.h - 4 - capH }
@@ -203,9 +209,9 @@ var (
 func (s *Show) ShowCaption() {
 	// A previous caption may be wider (e.g. with "PAUSE"): restore it first.
 	if err := s.HideCaption(); err != nil {
-		s.log("caption: " + err.Error())
+		s.Log("caption: " + err.Error())
 	}
-	text := strconv.Itoa(s.cur+1) + "/" + strconv.Itoa(len(s.files)) + " " + s.names[s.cur]
+	text := strconv.Itoa(s.cur+1) + "/" + strconv.Itoa(s.src.Len()) + " " + s.src.Name(s.cur)
 	if s.paused {
 		text += "  PAUSE"
 	}
@@ -216,7 +222,7 @@ func (s *Show) ShowCaption() {
 	tinyfont.WriteLine(s.d, &proggy.TinySZ8pt7b, capX+6, s.capY()+13, text, capFG)
 	s.d.Display()
 	s.caption = true
-	s.captionAt = s.now()
+	s.captionAt = s.Now()
 }
 
 // HideCaption restores the slide under the caption.
@@ -225,7 +231,10 @@ func (s *Show) HideCaption() error {
 		return nil
 	}
 	s.caption = false
-	if err := s.rect(s.cur, capX, s.capY(), s.capW, capH); err != nil {
+	if s.curR == nil {
+		return nil
+	}
+	if err := s.rect(s.curR, capX, s.capY(), s.capW, capH); err != nil {
 		return err
 	}
 	s.d.Display()
@@ -234,17 +243,21 @@ func (s *Show) HideCaption() error {
 
 // Next shows the following slide with the next transition in turn.
 func (s *Show) Next(delta int) error {
-	i := (s.cur + delta + len(s.files)) % len(s.files)
-	tr := s.next
-	s.next = (s.next + 1) % numTransitions
-	start := s.now()
+	n := s.src.Len()
+	i := ((s.cur+delta)%n + n) % n
+	tr := Cut
+	if len(s.Transitions) > 0 {
+		tr = s.Transitions[s.next%len(s.Transitions)]
+		s.next++
+	}
+	start := s.Now()
 	if err := s.Draw(i, tr); err != nil {
 		return err
 	}
-	s.log("slide " + strconv.Itoa(i+1) + "/" + strconv.Itoa(len(s.files)) + " " + s.names[i] +
-		" (" + tr.String() + ", " + strconv.Itoa(int(s.now().Sub(start).Milliseconds())) + " ms)")
+	s.Log("slide " + strconv.Itoa(i+1) + "/" + strconv.Itoa(n) + " " + s.src.Name(i) +
+		" (" + tr.String() + ", " + strconv.Itoa(int(s.Now().Sub(start).Milliseconds())) + " ms)")
 	s.ShowCaption()
-	s.shown = s.now()
+	s.shown = s.Now()
 	return nil
 }
 
@@ -253,9 +266,9 @@ func (s *Show) Start() error {
 	if err := s.Draw(0, Cut); err != nil {
 		return err
 	}
-	s.log("slideshow: " + strconv.Itoa(len(s.files)) + " slides")
+	s.Log("slideshow: " + strconv.Itoa(s.src.Len()) + " slides")
 	s.ShowCaption()
-	s.shown = s.now()
+	s.shown = s.Now()
 	return nil
 }
 
@@ -276,21 +289,21 @@ func (s *Show) Step() error {
 		default:
 			s.paused = !s.paused
 			if s.paused {
-				s.log("paused")
+				s.Log("paused")
 			} else {
-				s.log("resumed")
-				s.shown = s.now()
+				s.Log("resumed")
+				s.shown = s.Now()
 			}
 			s.ShowCaption()
 			return nil
 		}
 	}
-	if s.caption && !s.paused && s.now().Sub(s.captionAt) >= captionTime {
+	if s.caption && !s.paused && s.Now().Sub(s.captionAt) >= CaptionTime {
 		if err := s.HideCaption(); err != nil {
 			return err
 		}
 	}
-	if !s.paused && s.now().Sub(s.shown) >= s.Interval {
+	if !s.paused && s.Now().Sub(s.shown) >= s.Interval {
 		return s.Next(1)
 	}
 	return nil

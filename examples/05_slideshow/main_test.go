@@ -9,6 +9,7 @@ import (
 	"github.com/sat0ken/tinygo-cyd/board"
 	"github.com/sat0ken/tinygo-cyd/internal/goldentest"
 	"github.com/sat0ken/tinygo-cyd/memlcd"
+	"github.com/sat0ken/tinygo-cyd/slideshow"
 )
 
 // fakeClock replaces time.Now and time.Sleep so tests run instantly.
@@ -20,7 +21,7 @@ func (c *fakeClock) advance(d time.Duration) { c.t = c.t.Add(d) }
 
 var red = color.RGBA{255, 0, 0, 255}
 
-func newTestShow(t *testing.T) (*Show, *memlcd.Display, *memlcd.Touch, *fakeClock) {
+func newTestShow(t *testing.T) (*slideshow.Show, *memlcd.Display, *memlcd.Touch, *fakeClock) {
 	t.Helper()
 	d := memlcd.New(board.Width, board.Height)
 	touch := &memlcd.Touch{}
@@ -28,13 +29,13 @@ func newTestShow(t *testing.T) (*Show, *memlcd.Display, *memlcd.Touch, *fakeCloc
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := NewShow(d, touch, pack)
+	s, err := slideshow.NewShow(d, touch, slideshow.PackSource{Pack: pack})
 	if err != nil {
 		t.Fatal(err)
 	}
 	clk := &fakeClock{t: time.Unix(0, 0)}
-	s.now, s.sleep = clk.now, clk.sleep
-	s.log = func(string) {}
+	s.Now, s.Sleep = clk.now, clk.sleep
+	s.Log = func(string) {}
 	return s, d, touch, clk
 }
 
@@ -62,7 +63,7 @@ func TestEverySlideEveryTransition(t *testing.T) {
 		t.Fatalf("%d slides", s.Len())
 	}
 	for i := 0; i < s.Len(); i++ {
-		for tr := Transition(0); tr < numTransitions; tr++ {
+		for tr := slideshow.Transition(0); tr < slideshow.NumTransitions; tr++ {
 			d.FillScreen(red) // make sure every pixel is overwritten
 			if err := s.Draw(i, tr); err != nil {
 				t.Fatal(err)
@@ -74,7 +75,7 @@ func TestEverySlideEveryTransition(t *testing.T) {
 
 func TestTransitionDuration(t *testing.T) {
 	s, _, _, clk := newTestShow(t)
-	for tr := WipeDown; tr < numTransitions; tr++ {
+	for tr := slideshow.WipeDown; tr < slideshow.NumTransitions; tr++ {
 		start := clk.now()
 		s.Draw(0, tr)
 		if got := clk.now().Sub(start); got < s.Duration*9/10 || got > s.Duration {
@@ -88,7 +89,7 @@ func TestCaptionRestore(t *testing.T) {
 	s.Start()
 	goldentest.Check(t, "slideshow_caption", d.Image())
 	// The caption goes away after 2 seconds and the slide is intact again.
-	clk.advance(captionTime)
+	clk.advance(slideshow.CaptionTime)
 	s.Step()
 	wantSlide(t, d, 0)
 }
@@ -134,7 +135,7 @@ func TestAutoAdvanceAndTouch(t *testing.T) {
 	if s.Paused() {
 		t.Fatal("still paused")
 	}
-	clk.advance(captionTime)
+	clk.advance(slideshow.CaptionTime)
 	s.Step()
 	wantSlide(t, d, 3) // caption removed, nothing else changed
 	clk.advance(s.Interval)
