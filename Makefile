@@ -22,9 +22,11 @@ flash:
 # board.SlidesFlashOffset). Needed once, and again after `make slides`.
 # The ROM loader refuses a program image with ~1MB of embedded data, so the
 # slides are not part of the program (see package flashmap).
+# -fs 16MB: flash size auto-detection only happens for program images; without
+# it the flasher stub limits writes to 4MB and fails with status 0xC4.
 SLIDES_OFFSET := 0x800000
 flash-slides:
-	go run tinygo.org/x/espflasher@v0.8.1 -port $(or $(PORT),/dev/ttyUSB0) -offset $(SLIDES_OFFSET) examples/05_slideshow/slides.pack
+	go run tinygo.org/x/espflasher@v0.8.1 -port $(or $(PORT),/dev/ttyUSB0) -fs 16MB -offset $(SLIDES_OFFSET) examples/05_slideshow/slides.pack
 
 monitor:
 	tinygo monitor $(PORTFLAG) -baudrate 115200
