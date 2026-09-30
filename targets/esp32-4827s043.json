@@ -1,0 +1,6 @@
+{
+	"inherits": ["esp32s3-generic"],
+	"build-tags": ["esp32_4827s043"],
+	"serial": "uart",
+	"flash-method": "esp32flash"
+}
