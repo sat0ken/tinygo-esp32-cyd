@@ -1,10 +1,11 @@
 //go:build browser
 
 // Package wasmcheck opens web/index.html in headless Chromium and compares
-// the canvas with testdata/golden/app_initial.png, so the wasm build is
+// the canvas (DUMP_MS after start, default 1500ms) with a golden image, so the wasm build is
 // checked against the same golden image as the host test.
 //
-//	make test-browser   # builds web/app.wasm first
+//	make test-browser                                                  # cmd/app vs app_initial.png
+//	make test-browser PKG=./examples/05_slideshow GOLDEN=slideshow_caption DUMP_MS=2500
 package wasmcheck
 
 import (
@@ -50,7 +51,7 @@ func TestCanvasMatchesGolden(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	out, err := exec.CommandContext(ctx, bin, "--headless=new", "--disable-gpu", "--no-sandbox",
-		"--virtual-time-budget=10000", "--dump-dom", srv.URL+"/index.html?dump").Output()
+		"--virtual-time-budget=10000", "--dump-dom", srv.URL+"/index.html?dump="+os.Getenv("DUMP_MS")).Output()
 	if err != nil {
 		t.Fatalf("%s: %v", bin, err)
 	}
@@ -66,7 +67,11 @@ func TestCanvasMatchesGolden(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f, err := os.ReadFile("../../testdata/golden/app_initial.png")
+	golden := os.Getenv("GOLDEN")
+	if golden == "" {
+		golden = "app_initial"
+	}
+	f, err := os.ReadFile("../../testdata/golden/" + golden + ".png")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,8 +80,8 @@ func TestCanvasMatchesGolden(t *testing.T) {
 		t.Fatal(err)
 	}
 	if n := diff(want, got); n != 0 {
-		os.WriteFile("../../testdata/golden/app_initial.wasm.actual.png", data, 0o644)
-		t.Fatalf("%d pixels differ (canvas written to testdata/golden/app_initial.wasm.actual.png)", n)
+		os.WriteFile("../../testdata/golden/"+golden+".wasm.actual.png", data, 0o644)
+		t.Fatalf("%d pixels differ from %s.png (canvas written to testdata/golden/%s.wasm.actual.png)", n, golden, golden)
 	}
 }
 

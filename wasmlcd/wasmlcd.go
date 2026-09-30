@@ -32,11 +32,13 @@ type Display struct {
 	touchX, touchY int16
 	pressed        bool
 
-	rafID  js.Value
-	onRAF  js.Func
-	onDown js.Func
-	onMove js.Func
-	onUp   js.Func
+	rafID   js.Value
+	onRAF   js.Func
+	onFlush js.Func
+	flushFn string
+	onDown  js.Func
+	onMove  js.Func
+	onUp    js.Func
 }
 
 // New attaches to the canvas with the given element id and starts updating it.
@@ -82,6 +84,16 @@ func New(canvasID string, w, h int16) (*Display, error) {
 		d.pressed = false
 		return nil
 	})
+	// window.wasmlcdFlush_<id>() copies the frame buffer to the canvas right
+	// away. The headless check (make test-browser) calls it before reading
+	// the canvas, because headless Chromium with virtual time does not run
+	// animation frames while timers keep firing.
+	d.onFlush = js.FuncOf(func(this js.Value, args []js.Value) any {
+		d.flush()
+		return nil
+	})
+	d.flushFn = "wasmlcdFlush_" + canvasID
+	js.Global().Set(d.flushFn, d.onFlush)
 	canvas.Call("addEventListener", "pointerdown", d.onDown)
 	canvas.Call("addEventListener", "pointermove", d.onMove)
 	canvas.Call("addEventListener", "pointerup", d.onUp)
@@ -97,7 +109,9 @@ func (d *Display) Close() {
 	d.canvas.Call("removeEventListener", "pointermove", d.onMove)
 	d.canvas.Call("removeEventListener", "pointerup", d.onUp)
 	d.canvas.Call("removeEventListener", "pointercancel", d.onUp)
+	js.Global().Delete(d.flushFn)
 	d.onRAF.Release()
+	d.onFlush.Release()
 	d.onDown.Release()
 	d.onMove.Release()
 	d.onUp.Release()

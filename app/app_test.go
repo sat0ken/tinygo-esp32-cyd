@@ -1,79 +1,17 @@
 package app_test
 
 import (
-	"bytes"
-	"flag"
-	"fmt"
-	"image"
-	"image/png"
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/sat0ken/tinygo-cyd/app"
 	"github.com/sat0ken/tinygo-cyd/board"
+	"github.com/sat0ken/tinygo-cyd/internal/goldentest"
 	"github.com/sat0ken/tinygo-cyd/memlcd"
 )
 
-var update = flag.Bool("update", false, "rewrite the golden images in testdata/golden")
-
-const goldenDir = "../testdata/golden"
-
-// checkGolden compares the display with testdata/golden/<name>.png pixel by
-// pixel. On mismatch the actual image is written to
-// testdata/golden/<name>.actual.png (ignored by git) for inspection.
 func checkGolden(t *testing.T, name string, d *memlcd.Display) {
 	t.Helper()
-	path := filepath.Join(goldenDir, name+".png")
-	actualPath := filepath.Join(goldenDir, name+".actual.png")
-	if *update {
-		if err := d.SavePNG(path); err != nil {
-			t.Fatal(err)
-		}
-		os.Remove(actualPath)
-		t.Logf("updated %s", path)
-		return
-	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("%v (run `go test ./app -update` to create it)", err)
-	}
-	img, err := png.Decode(bytes.NewReader(data))
-	if err != nil {
-		t.Fatal(err)
-	}
-	got := d.Image()
-	if diff := compare(img, got); diff != "" {
-		d.SavePNG(actualPath)
-		t.Fatalf("%s: %s (actual written to %s)", name, diff, actualPath)
-	}
-	os.Remove(actualPath)
-}
-
-func compare(want image.Image, got *image.RGBA) string {
-	if want.Bounds() != got.Bounds() {
-		return fmt.Sprintf("size %v, want %v", got.Bounds(), want.Bounds())
-	}
-	n := 0
-	first := ""
-	b := want.Bounds()
-	for y := b.Min.Y; y < b.Max.Y; y++ {
-		for x := b.Min.X; x < b.Max.X; x++ {
-			wr, wg, wb, _ := want.At(x, y).RGBA()
-			gr, gg, gb, _ := got.At(x, y).RGBA()
-			if wr != gr || wg != gg || wb != gb {
-				if n == 0 {
-					first = fmt.Sprintf("first at (%d,%d): got %02x%02x%02x want %02x%02x%02x",
-						x, y, gr>>8, gg>>8, gb>>8, wr>>8, wg>>8, wb>>8)
-				}
-				n++
-			}
-		}
-	}
-	if n == 0 {
-		return ""
-	}
-	return fmt.Sprintf("%d pixels differ, %s", n, first)
+	goldentest.Check(t, name, d.Image())
 }
 
 func TestColorBars(t *testing.T) {

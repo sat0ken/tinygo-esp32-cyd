@@ -29,15 +29,19 @@
   WebAssembly.instantiateStreaming(fetch("app.wasm"), go.importObject)
     .then((result) => {
       status.textContent = "running (console shows the serial log)";
-      if (new URLSearchParams(location.search).has("dump")) {
+      const params = new URLSearchParams(location.search);
+      if (params.has("dump")) {
         // For the headless check (make test-browser): put the canvas pixels
         // in the DOM so `chromium --dump-dom` can read them.
+        // ?dump=<ms> sets the delay (default 1500ms).
+        const delay = parseInt(params.get("dump"), 10) || 1500;
         setTimeout(() => {
+          if (window.wasmlcdFlush_lcd) window.wasmlcdFlush_lcd(); // see wasmlcd.New
           const pre = document.createElement("pre");
           pre.id = "dump";
           pre.textContent = document.getElementById("lcd").toDataURL("image/png");
           document.body.appendChild(pre);
-        }, 1500);
+        }, delay);
       }
       return go.run(result.instance);
     })
