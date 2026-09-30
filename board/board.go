@@ -90,3 +90,17 @@ const (
 	PinUARTTX = 43
 	PinUARTRX = 44
 )
+
+// Touch calibration: raw 12-bit XPT2046 readings at the left/right and
+// top/bottom edges of the screen, as returned by xpttouch.ReadRaw.
+//
+// 要確認: these are placeholders covering the usual XPT2046 range. Run
+// examples/04_touch, touch the four corner targets and copy the values it
+// prints here.
+const (
+	TouchRawXLeft   = 200
+	TouchRawXRight  = 3900
+	TouchRawYTop    = 200
+	TouchRawYBottom = 3900
+	TouchSwapXY     = false
+)
