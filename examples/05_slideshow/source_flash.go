@@ -11,7 +11,8 @@ import (
 	"github.com/sat0ken/tinygo-cyd/slidepack"
 )
 
-const packHelp = "write the slides with: make flash-slides"
+// `tinygo flash` (make flash) erases the whole flash, slides included.
+const packHelp = "run make flash-slides (make flash erases them; use make flash-noerase)"
 
 // openPack maps the flash region written by `make flash-slides`: first the
 // header, then, once its size is known, the whole pack.

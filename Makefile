@@ -9,7 +9,7 @@ TINYGOROOT := $(shell tinygo env TINYGOROOT)
 PORTFLAG := $(if $(PORT),-port $(PORT),)
 EXAMPLES := 01_backlight 02_colorbars 03_tinydraw 04_touch 05_slideshow
 
-.PHONY: flash flash-slides monitor build examples wasm serve test test-browser update-golden slides clean
+.PHONY: flash flash-noerase flash-slides monitor build examples wasm serve test test-browser update-golden slides clean
 
 ## Board ------------------------------------------------------------------
 
@@ -18,8 +18,20 @@ EXAMPLES := 01_backlight 02_colorbars 03_tinydraw 04_touch 05_slideshow
 flash:
 	tinygo flash -target=$(TARGET) $(PORTFLAG) -monitor $(PKG)
 
+# Like `make flash` but without erasing the whole flash first (tinygo flash
+# erases everything, including the slides written by flash-slides): build the
+# program image and write it at 0 with espflasher, which also patches the
+# flash size into the header.
+# make flash-noerase PKG=./examples/05_slideshow && make monitor
+flash-noerase:
+	@mkdir -p out
+	tinygo build -target=$(TARGET) -o out/app.bin $(PKG)
+	go run tinygo.org/x/espflasher@v0.8.1 -port $(or $(PORT),/dev/ttyUSB0) -fs 16MB -offset 0x0 out/app.bin
+
 # Write examples/05_slideshow/slides.pack to its own flash region (0x800000,
-# board.SlidesFlashOffset). Needed once, and again after `make slides`.
+# board.SlidesFlashOffset). Needed once, again after `make slides`, and after
+# every `make flash` (which erases the whole flash); `make flash-noerase`
+# keeps it.
 # The ROM loader refuses a program image with ~1MB of embedded data, so the
 # slides are not part of the program (see package flashmap).
 # -fs 16MB: flash size auto-detection only happens for program images; without
@@ -73,4 +85,4 @@ slides:
 	go generate ./examples/05_slideshow
 
 clean:
-	rm -f web/app.wasm web/wasm_exec.js testdata/golden/*.actual.png
+	rm -rf out web/app.wasm web/wasm_exec.js testdata/golden/*.actual.png

@@ -19,7 +19,7 @@ func main() {
 	d, t, err := platform.Init()
 	if err != nil {
 		println("platform.Init:", err.Error())
-		select {}
+		platform.Halt()
 	}
 	a := app.New(d, t)
 	a.Draw()

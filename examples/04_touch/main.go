@@ -48,7 +48,7 @@ func main() {
 	d, err := platform.InitLCD()
 	if err != nil {
 		println("InitLCD:", err.Error())
-		select {}
+		platform.Halt()
 	}
 	t := platform.InitTouch()
 	println("default calibration:", calString(t.Cal))

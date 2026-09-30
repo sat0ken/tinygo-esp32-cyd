@@ -12,8 +12,9 @@
 //
 // It uses package platform, so it runs on the board and in the browser:
 //
-//	make flash-slides                       # board: write slides.pack to flash (once per change)
-//	make flash PKG=./examples/05_slideshow
+//	make flash-slides                               # board: write slides.pack to flash
+//	make flash-noerase PKG=./examples/05_slideshow  # program only, keeps the slides
+//	make monitor
 //	make wasm PKG=./examples/05_slideshow && make serve
 package main
 
@@ -32,7 +33,7 @@ func main() {
 	d, t, err := platform.Init()
 	if err != nil {
 		println("platform.Init:", err.Error())
-		select {}
+		platform.Halt()
 	}
 	pack, err := openPack()
 	if err == nil {
@@ -44,7 +45,7 @@ func main() {
 	println("slideshow:", err.Error())
 	println(packHelp)
 	showError(d, err.Error(), packHelp)
-	select {}
+	platform.Halt()
 }
 
 func run(s *Show) {

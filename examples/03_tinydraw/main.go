@@ -19,7 +19,7 @@ func main() {
 	d, _, err := platform.Init()
 	if err != nil {
 		println("platform.Init:", err.Error())
-		select {}
+		platform.Halt()
 	}
 
 	start := time.Now()

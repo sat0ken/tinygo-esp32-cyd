@@ -61,12 +61,16 @@ make examples                                # 全 example のビルド確認
 ### スライドショー（05_slideshow）
 
 実機では、画像データ（`examples/05_slideshow/slides.pack`）をプログラムとは別にフラッシュの 8MB 位置へ書き込む。
-画像を変えたときだけ書き直せばよい（`make flash` ではこの領域は消えない）。
 
 ```sh
-make flash-slides                          # slides.pack -> フラッシュ 0x800000（PORT 省略時 /dev/ttyUSB0）
-make flash PKG=./examples/05_slideshow
+make flash-slides                                # slides.pack -> フラッシュ 0x800000（PORT 省略時 /dev/ttyUSB0）
+make flash-noerase PKG=./examples/05_slideshow   # プログラムだけ書く（スライドは消さない）
+make monitor
 ```
+
+**注意：`make flash`（`tinygo flash`）は書き込み前にフラッシュ全体を消去するので、スライドも消える。**
+スライドを残したままプログラムを書き直すには `make flash-noerase` を使う。
+`make flash` を使った場合は、そのあとに `make flash-slides` をやり直す。
 
 画像を差し替えるときは `examples/05_slideshow/images/` に PNG / JPEG / GIF を置いて `make slides` を実行する
 （ファイル名順に表示）。`tools/img2rgb565` が 480×272 に切り抜き・縮小し、RGB565（ディザリングあり）のパックを作る。
