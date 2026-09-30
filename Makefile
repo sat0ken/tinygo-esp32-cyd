@@ -9,7 +9,7 @@ TINYGOROOT := $(shell tinygo env TINYGOROOT)
 PORTFLAG := $(if $(PORT),-port $(PORT),)
 EXAMPLES := 01_backlight 02_colorbars 03_tinydraw 04_touch 05_slideshow
 
-.PHONY: flash monitor build examples wasm serve test test-browser update-golden slides clean
+.PHONY: flash flash-slides monitor build examples wasm serve test test-browser update-golden slides clean
 
 ## Board ------------------------------------------------------------------
 
@@ -17,6 +17,14 @@ EXAMPLES := 01_backlight 02_colorbars 03_tinydraw 04_touch 05_slideshow
 # make flash PKG=./examples/02_colorbars PORT=/dev/ttyUSB0
 flash:
 	tinygo flash -target=$(TARGET) $(PORTFLAG) -monitor $(PKG)
+
+# Write examples/05_slideshow/slides.pack to its own flash region (0x800000,
+# board.SlidesFlashOffset). Needed once, and again after `make slides`.
+# The ROM loader refuses a program image with ~1MB of embedded data, so the
+# slides are not part of the program (see package flashmap).
+SLIDES_OFFSET := 0x800000
+flash-slides:
+	go run tinygo.org/x/espflasher@v0.8.1 -port $(or $(PORT),/dev/ttyUSB0) -offset $(SLIDES_OFFSET) examples/05_slideshow/slides.pack
 
 monitor:
 	tinygo monitor $(PORTFLAG) -baudrate 115200
@@ -58,7 +66,7 @@ test-browser: wasm
 update-golden:
 	go test ./app ./examples/05_slideshow -update
 
-# Convert examples/05_slideshow/images/* to the embedded RGB565 slides.
+# Convert examples/05_slideshow/images/* to examples/05_slideshow/slides.pack.
 slides:
 	go generate ./examples/05_slideshow
 

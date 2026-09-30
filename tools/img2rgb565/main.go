@@ -1,15 +1,21 @@
-// Command img2rgb565 converts PNG/JPEG/GIF images to raw big endian RGB565
-// files sized for the panel, to be embedded with go:embed.
+// Command img2rgb565 converts PNG/JPEG/GIF images to big endian RGB565
+// sized for the panel.
 //
-//	go run ./tools/img2rgb565 [-w 480] [-h 272] [-fit cover|contain] [-dither=true] -o outdir inputs...
+//	go run ./tools/img2rgb565 [-w 480] [-h 272] [-fit cover|contain] [-dither=true] -pack out.pack inputs...
+//	go run ./tools/img2rgb565 [...] -o outdir inputs...
 //
-// Inputs may be files or directories (every .png/.jpg/.jpeg/.gif inside).
-// Each input a/b/photo.jpg becomes outdir/photo.rgb565: w*h*2 bytes, no
-// header, row-major, 2 bytes per pixel big endian (pixel.RGB565BE, the
-// format of DrawRGBBitmap8).
+// Inputs may be files or directories (every .png/.jpg/.jpeg/.gif inside,
+// in name order).
+//
+// With -pack, all images go into one slidepack file (see package
+// slidepack), which examples/05_slideshow embeds (browser) or reads from
+// flash (board). With -o, each input a/b/photo.jpg becomes
+// outdir/photo.rgb565: w*h*2 bytes, no header, row-major, 2 bytes per pixel
+// big endian (pixel.RGB565BE, the format of DrawRGBBitmap8).
 package main
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
 	"image"
@@ -21,6 +27,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/sat0ken/tinygo-cyd/slidepack"
 )
 
 func main() {
@@ -28,7 +36,8 @@ func main() {
 	h := flag.Int("h", 272, "output height")
 	fitName := flag.String("fit", "cover", "cover (crop to fill) or contain (letterbox)")
 	dither := flag.Bool("dither", true, "Floyd-Steinberg dithering to RGB565")
-	outDir := flag.String("o", ".", "output directory")
+	outDir := flag.String("o", "", "output directory for one .rgb565 file per image")
+	packFile := flag.String("pack", "", "write all images into this slidepack file")
 	flag.Parse()
 
 	var fit Fit
@@ -48,22 +57,45 @@ func main() {
 	if len(inputs) == 0 {
 		log.Fatal("no input images")
 	}
-	if err := os.MkdirAll(*outDir, 0o755); err != nil {
-		log.Fatal(err)
+	if (*outDir == "") == (*packFile == "") {
+		log.Fatal("give exactly one of -o and -pack")
 	}
+	if *outDir != "" {
+		if err := os.MkdirAll(*outDir, 0o755); err != nil {
+			log.Fatal(err)
+		}
+	}
+	var names []string
+	var frames [][]byte
 	for _, in := range inputs {
 		img, err := load(in)
 		if err != nil {
 			log.Fatalf("%s: %v", in, err)
 		}
 		data := Convert(img, *w, *h, fit, *dither)
-		name := strings.TrimSuffix(filepath.Base(in), filepath.Ext(in)) + ".rgb565"
-		out := filepath.Join(*outDir, name)
+		base := strings.TrimSuffix(filepath.Base(in), filepath.Ext(in))
+		b := img.Bounds()
+		if *packFile != "" {
+			names = append(names, base)
+			frames = append(frames, data)
+			fmt.Printf("%s (%dx%d) -> %dx%d\n", in, b.Dx(), b.Dy(), *w, *h)
+			continue
+		}
+		out := filepath.Join(*outDir, base+".rgb565")
 		if err := os.WriteFile(out, data, 0o644); err != nil {
 			log.Fatal(err)
 		}
-		b := img.Bounds()
 		fmt.Printf("%s (%dx%d) -> %s (%dx%d, %d bytes)\n", in, b.Dx(), b.Dy(), out, *w, *h, len(data))
+	}
+	if *packFile != "" {
+		var buf bytes.Buffer
+		if err := slidepack.Write(&buf, *w, *h, names, frames); err != nil {
+			log.Fatal(err)
+		}
+		if err := os.WriteFile(*packFile, buf.Bytes(), 0o644); err != nil {
+			log.Fatal(err)
+		}
+		fmt.Printf("%s: %d slides, %d bytes\n", *packFile, len(frames), buf.Len())
 	}
 }
 

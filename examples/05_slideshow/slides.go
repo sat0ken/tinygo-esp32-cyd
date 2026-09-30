@@ -1,14 +1,15 @@
 package main
 
-import "embed"
-
-// The slides are raw RGB565 files made from images/ by tools/img2rgb565.
-// To use your own pictures, put PNG/JPEG files in images/ and run
-// `go generate ./examples/05_slideshow` (or `make slides`).
+// The slides are made from images/ by tools/img2rgb565 into one slidepack
+// file. To use your own pictures, put PNG/JPEG files in images/ and run
+// `make slides` (which runs this go:generate), then `make flash-slides`
+// for the board.
 //
-// go:embed data is read-only, so it stays in flash (DROM) on the board and
-// costs no RAM: 255KB per slide.
+// Where the pack comes from depends on the target:
+//   - board (source_flash.go): a flash region written separately with
+//     `make flash-slides` and memory-mapped at run time. Embedding it in
+//     the program does not work: the ESP32-S3 ROM loader refuses a
+//     program image with a ~1MB rodata segment.
+//   - browser and host tests (source_embed.go): go:embed.
 //
-//go:generate go run ../../tools/img2rgb565 -o slides images
-//go:embed slides/*.rgb565
-var slidesFS embed.FS
+//go:generate go run ../../tools/img2rgb565 -pack slides.pack images

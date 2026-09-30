@@ -104,3 +104,12 @@ const (
 	TouchRawYBottom = 329
 	TouchSwapXY     = false
 )
+
+// Flash region for data that is too large for the program image (see
+// package flashmap): examples/05_slideshow reads its slides here.
+// The program itself starts at 0 and is far smaller than 8MB.
+// Written with `make flash-slides`.
+const (
+	SlidesFlashOffset = 0x800000 // 8MB, 64KB aligned
+	SlidesFlashSize   = 0x800000 // up to the end of the 16MB flash
+)

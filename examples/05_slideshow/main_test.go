@@ -2,7 +2,7 @@ package main
 
 import (
 	"image/color"
-	"io/fs"
+	"io"
 	"testing"
 	"time"
 
@@ -24,7 +24,11 @@ func newTestShow(t *testing.T) (*Show, *memlcd.Display, *memlcd.Touch, *fakeCloc
 	t.Helper()
 	d := memlcd.New(board.Width, board.Height)
 	touch := &memlcd.Touch{}
-	s, err := NewShow(d, touch, slidesFS, "slides")
+	pack, err := openPack()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := NewShow(d, touch, pack)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,8 +41,11 @@ func newTestShow(t *testing.T) (*Show, *memlcd.Display, *memlcd.Touch, *fakeCloc
 // wantSlide checks that the whole screen equals slide i's file.
 func wantSlide(t *testing.T, d *memlcd.Display, i int) {
 	t.Helper()
-	entries, _ := fs.ReadDir(slidesFS, "slides")
-	data, err := fs.ReadFile(slidesFS, "slides/"+entries[i].Name())
+	pack, err := openPack()
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := io.ReadAll(pack.Slide(i))
 	if err != nil {
 		t.Fatal(err)
 	}

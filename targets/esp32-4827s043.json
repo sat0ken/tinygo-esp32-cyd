@@ -1,6 +1,15 @@
 {
-	"inherits": ["esp32s3-generic"],
-	"build-tags": ["esp32_4827s043"],
+	"inherits": [
+		"esp32s3-generic"
+	],
+	"build-tags": [
+		"esp32_4827s043"
+	],
 	"serial": "uart",
-	"flash-method": "esp32flash"
+	"flash-method": "esp32flash",
+	"ldflags": [
+		"--defsym=Cache_Invalidate_Addr=0x400016b0",
+		"--defsym=rom_Cache_Suspend_DCache=0x400018b4",
+		"--defsym=Cache_Resume_DCache=0x400018c0"
+	]
 }

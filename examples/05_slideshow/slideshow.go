@@ -4,14 +4,11 @@ import (
 	"errors"
 	"image/color"
 	"io"
-	"io/fs"
-	"path"
-	"sort"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/sat0ken/tinygo-cyd/hal"
+	"github.com/sat0ken/tinygo-cyd/slidepack"
 	"tinygo.org/x/tinyfont"
 	"tinygo.org/x/tinyfont/proggy"
 )
@@ -43,13 +40,13 @@ const (
 	blindBands  = 8
 )
 
-// Show is a slide show of raw RGB565 (big endian) images of exactly the
-// screen size, read from an fs.FS (normally go:embed, i.e. flash).
+// Show is a slide show of the full-screen RGB565 images of a slidepack.
 type Show struct {
 	d     hal.Display
 	bd    bitmapDrawer
 	t     hal.Touch
 	w, h  int16
+	pack  *slidepack.Pack
 	files []io.ReaderAt
 	names []string
 
@@ -71,21 +68,20 @@ type Show struct {
 	log   func(msg string)    // serial / console log
 }
 
-var ErrNoSlides = errors.New("slideshow: no .rgb565 files")
-
-// NewShow opens every *.rgb565 file in dir of fsys, in name order.
-func NewShow(d hal.Display, t hal.Touch, fsys fs.FS, dir string) (*Show, error) {
+// NewShow shows the slides of pack, which must match the screen size.
+func NewShow(d hal.Display, t hal.Touch, pack *slidepack.Pack) (*Show, error) {
 	bd, ok := d.(bitmapDrawer)
 	if !ok {
 		return nil, errors.New("slideshow: display has no DrawRGBBitmap8")
 	}
 	w, h := d.Size()
-	entries, err := fs.ReadDir(fsys, dir)
-	if err != nil {
-		return nil, err
+	if pack.Width != int(w) || pack.Height != int(h) {
+		return nil, errors.New("slideshow: slides are " + strconv.Itoa(pack.Width) + "x" + strconv.Itoa(pack.Height) +
+			", screen is " + strconv.Itoa(int(w)) + "x" + strconv.Itoa(int(h)))
 	}
 	s := &Show{
-		d: d, bd: bd, t: t, w: w, h: h,
+		d: d, bd: bd, t: t, w: w, h: h, pack: pack,
+		names:    pack.Names,
 		Interval: 5 * time.Second,
 		Duration: 400 * time.Millisecond,
 		next:     WipeDown,
@@ -93,32 +89,8 @@ func NewShow(d hal.Display, t hal.Touch, fsys fs.FS, dir string) (*Show, error) 
 		now:      time.Now,
 		log:      func(msg string) { println(msg) },
 	}
-	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
-	size := int64(w) * int64(h) * 2
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".rgb565") {
-			continue
-		}
-		f, err := fsys.Open(path.Join(dir, e.Name()))
-		if err != nil {
-			return nil, err
-		}
-		st, err := f.Stat()
-		if err != nil {
-			return nil, err
-		}
-		if st.Size() != size {
-			return nil, errors.New("slideshow: " + e.Name() + " is not " + strconv.Itoa(int(w)) + "x" + strconv.Itoa(int(h)) + " RGB565")
-		}
-		ra, ok := f.(io.ReaderAt)
-		if !ok {
-			return nil, errors.New("slideshow: file does not implement io.ReaderAt")
-		}
-		s.files = append(s.files, ra)
-		s.names = append(s.names, strings.TrimSuffix(e.Name(), ".rgb565"))
-	}
-	if len(s.files) == 0 {
-		return nil, ErrNoSlides
+	for i := 0; i < pack.Len(); i++ {
+		s.files = append(s.files, pack.Slide(i))
 	}
 	n := int(w) * wipeLines * 2
 	if m := wipeColumns * int(h) * 2; m > n {
