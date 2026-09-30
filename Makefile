@@ -7,7 +7,7 @@ DUMP_MS   ?= 1500
 TINYGOROOT := $(shell tinygo env TINYGOROOT)
 
 PORTFLAG := $(if $(PORT),-port $(PORT),)
-EXAMPLES := 01_backlight 02_colorbars 03_tinydraw 04_touch 05_slideshow 06_sdslideshow 07_breakout
+EXAMPLES := 01_backlight 02_colorbars 03_tinydraw 04_touch 05_slideshow 06_sdslideshow 07_breakout 08_invaders
 
 .PHONY: flash flash-noerase flash-slides monitor build examples wasm serve test test-browser update-golden slides clean
 
@@ -78,7 +78,7 @@ test-browser: wasm
 # Rewrite testdata/golden/*.png after an intended UI change. Check the new
 # images before committing them.
 update-golden:
-	go test ./app ./examples/05_slideshow ./examples/07_breakout -update
+	go test ./app ./examples/05_slideshow ./examples/07_breakout ./examples/08_invaders -update
 
 # Convert examples/05_slideshow/images/* to examples/05_slideshow/slides.pack.
 slides:
