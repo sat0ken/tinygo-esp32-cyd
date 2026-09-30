@@ -204,9 +204,21 @@ func logf(format string, args ...any) {
 }
 
 // DMAStatus returns the address of the descriptor the DMA is working on
-// (OUT_DSCR) and the OUT_STATE register. If the DMA is running, OUT_DSCR
-// changes between calls.
+// (OUT_DSCR) and the OUT_STATE register. OUT_DSCR follows the scan-out, so
+// it changes between calls made at different points of a frame (calls made
+// at the same point, e.g. right after WaitVSync, all return the same value).
 func (d *Device) DMAStatus() (dscr, state uint32) {
 	r := dmaOut(d.cfg.DMAChannel)
 	return r.DSCR.Get(), r.STATE.Get()
+}
+
+// DescriptorIndex converts an OUT_DSCR address to the index in the
+// descriptor list (0..numDescs-1), or -1 if it is not one of ours.
+func (d *Device) DescriptorIndex(dscr uint32) int {
+	head := uint32(uintptr(unsafe.Pointer(&descs[0])))
+	size := uint32(unsafe.Sizeof(descriptor{}))
+	if dscr < head || (dscr-head)%size != 0 || int((dscr-head)/size) >= d.numDescs {
+		return -1
+	}
+	return int((dscr - head) / size)
 }

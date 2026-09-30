@@ -16,6 +16,7 @@ package main
 import (
 	"image/color"
 	"machine"
+	"strconv"
 	"time"
 	"unsafe"
 
@@ -63,8 +64,17 @@ func main() {
 				command(d, b)
 			}
 		}
+		// Sample the DMA position 6 times, 3ms apart, over one frame
+		// (~17.6ms). The descriptor index (0..67) should advance with
+		// the scan and wrap around, which shows the DMA is running.
 		dscr, state := d.DMAStatus()
-		println("tick", i, "fps", frames, "OUT_DSCR", hex(dscr), "OUT_STATE", hex(state))
+		idx := ""
+		for s := 0; s < 6; s++ {
+			a, _ := d.DMAStatus()
+			idx += " " + strconv.Itoa(d.DescriptorIndex(a))
+			time.Sleep(3 * time.Millisecond)
+		}
+		println("tick", i, "fps", frames, "OUT_DSCR", hex(dscr), "OUT_STATE", hex(state), "desc:"+idx)
 	}
 }
 
