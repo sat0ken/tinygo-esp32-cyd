@@ -2,12 +2,14 @@ TARGET    ?= ./targets/esp32-4827s043.json
 PKG       ?= ./cmd/app
 PORT      ?=
 ADDR      ?= :8080
+GOLDEN    ?= app_initial
+DUMP_MS   ?= 1500
 TINYGOROOT := $(shell tinygo env TINYGOROOT)
 
 PORTFLAG := $(if $(PORT),-port $(PORT),)
-EXAMPLES := 01_backlight 02_colorbars 03_tinydraw 04_touch
+EXAMPLES := 01_backlight 02_colorbars 03_tinydraw 04_touch 05_slideshow
 
-.PHONY: flash monitor build examples wasm serve test test-browser update-golden clean
+.PHONY: flash monitor build examples wasm serve test test-browser update-golden slides clean
 
 ## Board ------------------------------------------------------------------
 
@@ -49,12 +51,16 @@ test:
 # Optional: render web/index.html in headless Chromium and compare the
 # canvas with the same golden image (needs chromium or google-chrome).
 test-browser: wasm
-	go test -tags browser -count=1 ./tools/wasmcheck
+	GOLDEN=$(GOLDEN) DUMP_MS=$(DUMP_MS) go test -tags browser -count=1 ./tools/wasmcheck
 
 # Rewrite testdata/golden/*.png after an intended UI change. Check the new
 # images before committing them.
 update-golden:
-	go test ./app -update
+	go test ./app ./examples/05_slideshow -update
+
+# Convert examples/05_slideshow/images/* to the embedded RGB565 slides.
+slides:
+	go generate ./examples/05_slideshow
 
 clean:
 	rm -f web/app.wasm web/wasm_exec.js testdata/golden/*.actual.png

@@ -52,10 +52,26 @@ make examples                                # 全 example のビルド確認
 | 02_colorbars | 立ち上げ手順（フェーズ1〜5）を順に実行し、各段階のレジスタを読み戻して OK/NG をログに出す。8色のカラーバーと四辺の白枠を表示 | 下記「実機での確認項目」 |
 | 03_tinydraw | アプリ画面（tinydraw 図形 + tinyfont 文字）を描いて描画時間をログに出す。wasm でも動く | 図形と文字が正しく出る |
 | 04_touch | 4隅のターゲットをタッチしてキャリブレーションし、`board.go` 用の値をログに出す。その後タッチ位置に点を描く | 点がペン先の位置に出る |
+| 05_slideshow | フラッシュに埋め込んだ画像を5秒ごとに切り替える（ワイプ・ブラインドの切り替え効果）。タッチで右 1/3 = 次、左 1/3 = 前、中央 = 一時停止。wasm でも動く | 画像が崩れずに出る、切り替えとタッチが効く |
 
 02_colorbars はシリアルから1文字コマンドを受け付ける：
 `c` カラーバー、`r`/`g`/`b`/`w`/`k` 単色（赤/緑/青/白/黒）、`d` レジスタを再ダンプ。
 色がおかしいときは単色で1色ずつ確認する。
+
+### スライドショーの画像を差し替える
+
+`examples/05_slideshow/images/` に PNG / JPEG / GIF を置いて `make slides` を実行する。
+`tools/img2rgb565` が 480×272 に切り抜き・縮小し、RGB565（ディザリングあり）の
+`examples/05_slideshow/slides/*.rgb565` を作る。ファイル名順に表示される。
+
+```sh
+make slides                                   # images/ -> slides/
+go run ./tools/img2rgb565 -fit contain -o examples/05_slideshow/slides examples/05_slideshow/images   # 切り抜かずに黒帯で収める
+```
+
+- 1枚あたり 255KB。`go:embed` のデータはフラッシュ（DROM）に置かれるので RAM は使わない。
+  フラッシュは 16MB あるので数十枚まで入るが、枚数に比例して書き込み時間が延びる。
+- `images/` の同梱画像はプログラムで生成したサンプル。
 
 ## ブラウザ（wasm）で動かす
 
@@ -77,6 +93,7 @@ wasm 版で確認できるのは描画・UI・アプリのロジックだけ。R
 ```sh
 make test            # go test ./...（ゴールデン画像テストを含む）
 make test-browser    # 任意：headless Chromium で web/ を開き、canvas を同じゴールデン画像と比較
+make test-browser PKG=./examples/05_slideshow GOLDEN=slideshow_caption DUMP_MS=2500
 make update-golden   # UI を意図して変えたとき、ゴールデン画像を更新（コミット前に画像を目視確認）
 ```
 
