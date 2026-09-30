@@ -8,7 +8,10 @@
 //  2. The calibration is computed and printed as constants for board.go.
 //  3. Afterwards every touch draws a dot at the converted position; the
 //     dot should be under the stylus. Touch the top-left corner area
-//     ("RECAL") to calibrate again.
+//     ("RECAL") for 1 second to calibrate again.
+//
+// Readings that cannot come from the four targets (xpttouch.FromCorners)
+// are rejected with "calibration NG" and the targets are shown again.
 //
 // GPIO18 (touch INT) is shared with connectors P3/P4: keep it free there.
 //
@@ -51,8 +54,15 @@ func main() {
 	println("default calibration:", calString(t.Cal))
 
 	for {
-		t.Cal = calibrate(d, t)
-		println("calibration:", calString(t.Cal))
+		cal, err := calibrate(d, t)
+		if err != nil {
+			println("calibration NG:", err.Error(), "- touch the targets again")
+			showMessage(d, "NG: "+err.Error()+" - again")
+			time.Sleep(2 * time.Second)
+			continue
+		}
+		t.Cal = cal
+		println("calibration OK:", calString(t.Cal))
 		println("// paste into board/board.go:")
 		println("TouchRawXLeft   =", t.Cal.RawXLeft)
 		println("TouchRawXRight  =", t.Cal.RawXRight)
@@ -85,7 +95,7 @@ func waitTap(t *xpttouch.Touch) (int32, int32) {
 	}
 }
 
-func calibrate(d *rgblcd.Device, t *xpttouch.Touch) xpttouch.Calibration {
+func calibrate(d *rgblcd.Device, t *xpttouch.Touch) (xpttouch.Calibration, error) {
 	var raw [4][2]int32
 	for i, tg := range targets {
 		d.FillScreen(app.Black)
@@ -97,37 +107,12 @@ func calibrate(d *rgblcd.Device, t *xpttouch.Touch) xpttouch.Calibration {
 		raw[i] = [2]int32{x, y}
 		println("target", i+1, "screen", tg[0], tg[1], "raw", x, y)
 	}
-
-	// If raw X changes more between top-left and bottom-left than between
-	// top-left and top-right, the axes are swapped.
-	swap := abs(raw[3][0]-raw[0][0]) > abs(raw[1][0]-raw[0][0])
-	if swap {
-		for i := range raw {
-			raw[i][0], raw[i][1] = raw[i][1], raw[i][0]
-		}
-	}
-	// Average the two readings on each edge, then extrapolate from the
-	// target position (inset) to the screen edge (0 and size-1).
-	left := (raw[0][0] + raw[3][0]) / 2
-	right := (raw[1][0] + raw[2][0]) / 2
-	top := (raw[0][1] + raw[1][1]) / 2
-	bottom := (raw[2][1] + raw[3][1]) / 2
-	left, right = extrapolate(left, right, inset, board.Width-1-inset, board.Width-1)
-	top, bottom = extrapolate(top, bottom, inset, board.Height-1-inset, board.Height-1)
-	return xpttouch.Calibration{
-		Width: board.Width, Height: board.Height,
-		RawXLeft: left, RawXRight: right, RawYTop: top, RawYBottom: bottom,
-		SwapXY: swap,
-	}
+	return xpttouch.FromCorners(raw, board.Width, board.Height, inset)
 }
 
-// extrapolate maps raw readings a (at pixel pa) and b (at pixel pb) to the
-// raw values at pixel 0 and pixel max.
-func extrapolate(a, b int32, pa, pb, max int32) (int32, int32) {
-	perPixel := float32(b-a) / float32(pb-pa)
-	lo := a - int32(perPixel*float32(pa))
-	hi := b + int32(perPixel*float32(max-pb))
-	return lo, hi
+func showMessage(d *rgblcd.Device, msg string) {
+	d.FillScreen(app.Black)
+	tinyfont.WriteLine(d, &proggy.TinySZ8pt7b, 20, 130, msg, app.Yellow)
 }
 
 func paint(d *rgblcd.Device, t *xpttouch.Touch) {
@@ -144,23 +129,38 @@ func paint(d *rgblcd.Device, t *xpttouch.Touch) {
 	for {
 		x, y, ok := t.ReadTouch()
 		if ok {
-			if x < 60 && y < 24 {
-				for {
-					if _, _, ok := t.ReadTouch(); !ok {
-						break
-					}
-					time.Sleep(10 * time.Millisecond)
-				}
+			if x < 60 && y < 24 && heldFor(t, time.Second) {
 				return
 			}
 			d.FillRectangle(x-1, y-1, 3, 3, app.Yellow)
 			if time.Since(last) > 200*time.Millisecond {
-				rx, ry, _ := t.ReadRaw()
-				println("touch", x, y, "raw", rx, ry)
-				last = time.Now()
+				if rx, ry, ok := t.ReadRaw(); ok {
+					println("touch", x, y, "raw", rx, ry)
+					last = time.Now()
+				}
 			}
 		}
 		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// heldFor reports whether the panel stays pressed inside RECAL for d, then
+// waits for the release. A short touch, or a slip out of the area, returns
+// false so RECAL is not triggered by accident.
+func heldFor(t *xpttouch.Touch, d time.Duration) bool {
+	start := time.Now()
+	for time.Since(start) < d {
+		x, y, ok := t.ReadTouch()
+		if !ok || x >= 60 || y >= 24 {
+			return false
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	for {
+		if _, _, ok := t.ReadTouch(); !ok {
+			return true
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 
@@ -168,11 +168,4 @@ func calString(c xpttouch.Calibration) string {
 	return "x " + strconv.Itoa(int(c.RawXLeft)) + ".." + strconv.Itoa(int(c.RawXRight)) +
 		" y " + strconv.Itoa(int(c.RawYTop)) + ".." + strconv.Itoa(int(c.RawYBottom)) +
 		" swap=" + strconv.FormatBool(c.SwapXY)
-}
-
-func abs(v int32) int32 {
-	if v < 0 {
-		return -v
-	}
-	return v
 }
