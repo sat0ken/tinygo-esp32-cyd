@@ -94,13 +94,13 @@ const (
 // Touch calibration: raw 12-bit XPT2046 readings at the left/right and
 // top/bottom edges of the screen, as returned by xpttouch.ReadRaw.
 //
-// 要確認: these are placeholders covering the usual XPT2046 range. Run
-// examples/04_touch, touch the four corner targets and copy the values it
-// prints here.
+// Measured with examples/04_touch on the board (2026-09-30): raw X grows
+// from left to right, raw Y grows from bottom to top, axes not swapped.
+// Panels differ slightly; run examples/04_touch again to re-measure.
 const (
-	TouchRawXLeft   = 200
-	TouchRawXRight  = 3900
-	TouchRawYTop    = 200
-	TouchRawYBottom = 3900
+	TouchRawXLeft   = 172
+	TouchRawXRight  = 3940
+	TouchRawYTop    = 3884
+	TouchRawYBottom = 329
 	TouchSwapXY     = false
 )
