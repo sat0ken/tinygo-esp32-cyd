@@ -25,12 +25,18 @@ import (
 	"github.com/sat0ken/tinygo-cyd/rgblcd"
 )
 
+// regsOK is the result of the last register check (Dump).
+var regsOK bool
+
 func main() {
-	time.Sleep(time.Second) // time to open the serial monitor
+	// Opening the serial monitor resets the board (DTR/RTS), and the monitor
+	// needs about 2 seconds to connect: wait so the dump below is not lost.
+	time.Sleep(3 * time.Second)
 	println("\n=== 02_colorbars ===")
 
 	println("--- phase 1: register access ---")
-	println("self test:", okStr(rgblcd.SelfTest(0)))
+	selfOK := rgblcd.SelfTest(0)
+	println("self test:", okStr(selfOK))
 	fb := platform.FrameBuffer()
 	println("frame buffer at", hex(uint32(uintptr(unsafe.Pointer(&fb[0])))), "bytes", len(fb)*2)
 
@@ -48,7 +54,7 @@ func main() {
 	app.DrawColorBars(d)
 	d.Start()
 	platform.SetBacklight(100)
-	d.Dump()
+	regsOK = d.Dump()
 
 	uart := machine.Serial
 	for i := 0; ; i++ {
@@ -74,7 +80,10 @@ func main() {
 			idx += " " + strconv.Itoa(d.DescriptorIndex(a))
 			time.Sleep(3 * time.Millisecond)
 		}
-		println("tick", i, "fps", frames, "OUT_DSCR", hex(dscr), "OUT_STATE", hex(state), "desc:"+idx)
+		// The result of the self test and register check is repeated on
+		// every line, so it is visible even if the boot log was missed.
+		println("tick", i, "fps", frames, "selftest", okStr(selfOK), "regs", okStr(regsOK),
+			"OUT_DSCR", hex(dscr), "OUT_STATE", hex(state), "desc:"+idx)
 	}
 }
 
@@ -93,7 +102,7 @@ func command(d *rgblcd.Device, b byte) {
 	case 'k':
 		d.FillScreen(color.RGBA{0, 0, 0, 255})
 	case 'd':
-		d.Dump()
+		regsOK = d.Dump()
 	default:
 		return
 	}
