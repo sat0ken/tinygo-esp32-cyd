@@ -53,6 +53,7 @@ make examples                                # 全 example のビルド確認
 | 03_tinydraw | アプリ画面（tinydraw 図形 + tinyfont 文字）を描いて描画時間をログに出す。wasm でも動く | 図形と文字が正しく出る |
 | 04_touch | 4隅のターゲットをタッチしてキャリブレーションし、`board.go` 用の値をログに出す。その後タッチ位置に点を描く | 点がペン先の位置に出る |
 | 05_slideshow | 画像を5秒ごとに切り替える（ワイプ・ブラインドの切り替え効果）。タッチで右 1/3 = 次、左 1/3 = 前、中央 = 一時停止。wasm でも動く。**実機では先に `make flash-slides` が必要** | 画像が崩れずに出る、切り替えとタッチが効く |
+| 06_sdslideshow | microSD カードの画像（480×272 の BMP か `.rgb565`）で 05 と同じスライドショー。タッチ操作も同じ | カードの画像が出る、タッチが効く |
 
 02_colorbars はシリアルから1文字コマンドを受け付ける：
 `c` カラーバー、`r`/`g`/`b`/`w`/`k` 単色（赤/緑/青/白/黒）、`d` レジスタを再ダンプ。
@@ -82,6 +83,31 @@ make monitor
   そこで別領域に書いたデータを実行時に MMU でマッピングして読む（`flashmap` パッケージ、ESP-IDF の `esp_mmu_map` 相当）。
 - ブラウザ版とホストのテストでは同じ `slides.pack` を `go:embed` で埋め込む。
 - `images/` の同梱画像はプログラムで生成したサンプル。
+
+### SD カードのスライドショー（06_sdslideshow）
+
+1. microSD カードを **FAT32** でフォーマットする（exFAT は未対応。32GB を超えるカードは exFAT のことが多い）。
+2. カードに `slides` フォルダを作り（なければルートを探す）、画像を入れる。ファイル名順に表示される。
+   - **BMP**：480×272、24bit または 32bit、無圧縮。多くの画像ソフトでこの形式で保存できる。
+   - **.rgb565**：PNG / JPEG から変換する。
+     ```sh
+     go run ./tools/img2rgb565 -o /path/to/sdcard/slides ~/Pictures/*.jpg
+     ```
+     （切り抜かずに収めるなら `-fit contain` を付ける）
+   - JPEG / PNG は実機では読めない（デコードに必要な RAM がない）ので、PC で変換しておく。
+3. カードを挿して書き込む。
+   ```sh
+   make flash-noerase PKG=./examples/06_sdslideshow
+   make monitor
+   ```
+
+- SD カードとタッチは SPI の SCK/MOSI/MISO を共有している（CS は SD=GPIO10、タッチ=GPIO38）。
+  SD はハードウェア SPI、タッチはビットバングで使い、使う直前にピンの割り当てを切り替えている。
+- SPI は 10MHz で読む。画像の一部の色がおかしい場合は `examples/06_sdslideshow/bus.go` の `sdFrequency` を 4MHz に下げる
+  （ドライバがデータの CRC を検査しないため）。
+- 読み込みに1枚1秒前後かかるので、切り替え効果は上から下・ブラインド・瞬時の3種類（左から右は遅いので使わない）。
+- FAT を読む tinyfs/fatfs は C コードで `malloc` を使う。ESP32-S3 のターゲットは `malloc` を Wi-Fi ドライバ用に
+  差し替える設定（`--wrap=malloc`）なので、`internal/espmalloc` で TinyGo の `malloc` に戻している。
 
 ## ブラウザ（wasm）で動かす
 

@@ -85,6 +85,15 @@ const (
 	PinTouchINT  = 18
 )
 
+// microSD slot (SPI mode). It shares SCK/MOSI/MISO with the XPT2046 touch
+// controller; only the chip select differs.
+// Source: rzeldent/platformio-espressif32-sunton esp32-4827S043R.json
+// (TF_CS=10, TF_SPI_MOSI=11, TF_SPI_SCLK=12, TF_SPI_MISO=13;
+// XPT2046_SPI_BUS_* = 11/13/12, XPT2046_SPI_CONFIG_CS=38).
+const (
+	PinSDCS = 10
+)
+
 // Serial console: UART0 (GPIO43 TX / GPIO44 RX) through the CH340C USB-UART.
 const (
 	PinUARTTX = 43
