@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ESP32-4827S043 simulator</title>
+<style>
+  body { margin: 0; padding: 16px; background: #222; color: #ddd; font-family: sans-serif; }
+  #lcd {
+    display: block;
+    width: 960px;                     /* 2x of 480x272 */
+    max-width: 100%; height: auto; aspect-ratio: 480 / 272;
+    image-rendering: pixelated;
+    touch-action: none;               /* pointer events instead of scrolling */
+    background: #000;
+    border: 12px solid #111; border-radius: 6px;
+  }
+  #status { margin-top: 8px; font-size: 13px; color: #999; }
+</style>
+</head>
+<body>
+<canvas id="lcd" width="480" height="272"></canvas>
+<div id="status">loading app.wasm…</div>
+<script src="wasm_exec.js"></script>
+<script>
+  // wasm_exec.js must be the TinyGo one ($(tinygo env TINYGOROOT)/targets/wasm_exec.js).
+  const go = new Go();
+  const status = document.getElementById("status");
+  WebAssembly.instantiateStreaming(fetch("app.wasm"), go.importObject)
+    .then((result) => {
+      status.textContent = "running (console shows the serial log)";
+      if (new URLSearchParams(location.search).has("dump")) {
+        // For the headless check (make test-browser): put the canvas pixels
+        // in the DOM so `chromium --dump-dom` can read them.
+        setTimeout(() => {
+          const pre = document.createElement("pre");
+          pre.id = "dump";
+          pre.textContent = document.getElementById("lcd").toDataURL("image/png");
+          document.body.appendChild(pre);
+        }, 1500);
+      }
+      return go.run(result.instance);
+    })
+    .then(() => { status.textContent = "app exited"; })
+    .catch((err) => { status.textContent = "error: " + err; console.error(err); });
+</script>
+</body>
+</html>

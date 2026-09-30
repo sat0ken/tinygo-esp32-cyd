@@ -1,3 +1,5 @@
+//go:build esp32s3
+
 // 01_backlight fades the backlight (GPIO2) with PWM and logs once a second.
 //
 // Flash: tinygo flash -target=./targets/esp32-4827s043.json -monitor ./examples/01_backlight
