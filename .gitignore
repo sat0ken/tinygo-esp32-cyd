@@ -4,3 +4,6 @@ web/wasm_exec.js
 *.elf
 /out/
 testdata/golden/*.actual.png
+# quiz is kept locally, not in git
+docs/QUIZ.md
+docs/QUIZ_ANSWERS.md

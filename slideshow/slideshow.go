@@ -274,8 +274,8 @@ func (s *Show) Start() error {
 
 // Step handles touch and the timers. Call it every few milliseconds.
 //
-// Touch (on release of a new press): left third = previous slide, right
-// third = next slide, middle = pause / resume.
+// Touch (when a new press starts; holding does not repeat): left third =
+// previous slide, right third = next slide, middle = pause / resume.
 func (s *Show) Step() error {
 	x, _, pressed := s.t.ReadTouch()
 	newPress := pressed && !s.wasTouch

@@ -79,7 +79,7 @@ make monitor
 （ファイル名順に表示）。`tools/img2rgb565` が 480×272 に切り抜き・縮小し、RGB565（ディザリングあり）のパックを作る。
 切り抜かずに黒帯で収めたい場合は `go run ./tools/img2rgb565 -fit contain -pack examples/05_slideshow/slides.pack examples/05_slideshow/images`。
 
-- 1枚 255KB。フラッシュ領域は 8MB なので最大約 31 枚（パック形式の上限は 127 枚）。
+- 1枚 255KB。フラッシュ領域は 8MB なので最大 32 枚（(8MB − ヘッダ 4KB) ÷ 261,120 バイト。パック形式の上限は 127 枚）。
 - 画像をプログラムに埋め込まない理由：TinyGo は2段目ブートローダを使わず ROM が直接プログラムを読み込むが、
   ROM は約 1MB の rodata セグメントを拒否する（`Invalid image block, can't boot`）。
   そこで別領域に書いたデータを実行時に MMU でマッピングして読む（`flashmap` パッケージ、ESP-IDF の `esp_mmu_map` 相当）。
