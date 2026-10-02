@@ -1,4 +1,7 @@
-package main
+// Package invaders is a space invaders game for a 480x272 touch screen.
+// It depends only on hal: examples/08_invaders runs it alone, cmd/games
+// from a launcher.
+package invaders
 
 import (
 	"image/color"
@@ -46,6 +49,7 @@ const (
 var (
 	bgColor     = color.RGBA{0, 0, 0, 255}
 	hudColor    = color.RGBA{30, 30, 60, 255}
+	backColor   = color.RGBA{70, 70, 120, 255}
 	textColor   = color.RGBA{255, 255, 255, 255}
 	msgColor    = color.RGBA{255, 220, 60, 255}
 	groundColor = color.RGBA{60, 220, 60, 255}
@@ -75,6 +79,8 @@ const (
 )
 
 type rect struct{ x, y, w, h int16 }
+
+func (a rect) has(x, y int16) bool { return x >= a.x && x < a.x+a.w && y >= a.y && y < a.y+a.h }
 
 func (a rect) overlaps(b rect) bool {
 	return a.x < b.x+b.w && a.x+a.w > b.x && a.y < b.y+b.h && a.y+a.h > b.y
@@ -118,6 +124,10 @@ type Game struct {
 	bd   bitmapDrawer
 	t    hal.Touch
 	w, h int16
+
+	// OnExit, if set, shows a "< GAMES" button on the title and game over
+	// screens; tapping it calls OnExit (used by the cmd/games launcher).
+	OnExit func()
 
 	state  state
 	stateT float32 // clock when the state was entered
@@ -188,6 +198,20 @@ func (g *Game) reset() {
 func (g *Game) setState(s state) {
 	g.state = s
 	g.stateT = g.now
+	g.hudDirty = true // shows or hides the "< GAMES" button
+}
+
+// showBack reports whether the "< GAMES" button is on screen.
+func (g *Game) showBack() bool {
+	return g.OnExit != nil && (g.state == ready || g.state == gameOver)
+}
+
+func (g *Game) backRect() rect { return rect{g.w - 76, 2, 72, hudH - 4} }
+
+// Status returns the score, lives, wave and invaders left, for logging.
+func (g *Game) Status() string {
+	return "score " + strconv.Itoa(g.score) + " lives " + strconv.Itoa(g.lives) +
+		" wave " + strconv.Itoa(g.wave) + " invaders " + strconv.Itoa(g.alive)
 }
 
 func (g *Game) newWave() {
@@ -355,9 +379,13 @@ func (g *Game) DrawAll() {
 // redraws what changed.
 func (g *Game) Update(dt float32) {
 	g.now += dt
-	x, _, pressed := g.t.ReadTouch()
+	x, y, pressed := g.t.ReadTouch()
 	tap := pressed && !g.wasTouch
 	g.wasTouch = pressed
+	if tap && g.showBack() && g.backRect().has(x, y) {
+		g.OnExit()
+		return
+	}
 
 	if pressed && (g.state == ready || g.state == playing) {
 		cx := x - cannonSprite.pw()/2
@@ -687,6 +715,11 @@ func (g *Game) drawDynamic() {
 		text := "SCORE " + pad(g.score) + "   HI " + pad(g.hi) +
 			"   LIVES " + strconv.Itoa(g.lives) + "   WAVE " + strconv.Itoa(g.wave)
 		tinyfont.WriteLine(g.d, &proggy.TinySZ8pt7b, 8, 14, text, textColor)
+		if g.showBack() {
+			b := g.backRect()
+			g.d.FillRectangle(b.x, b.y, b.w, b.h, backColor)
+			tinyfont.WriteLine(g.d, &proggy.TinySZ8pt7b, b.x+12, b.y+12, "< GAMES", textColor)
+		}
 	}
 	g.drawMessage()
 }

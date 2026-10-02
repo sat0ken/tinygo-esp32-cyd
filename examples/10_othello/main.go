@@ -1,4 +1,7 @@
-// 10_othello is othello (reversi) against the CPU on the touch screen.
+// 10_othello runs othello against the CPU (package games/othello) alone.
+// cmd/games has it together with the other games.
+//
+// The game:
 //
 //   - In the menu, choose your colour (black moves first) and the CPU level
 //     (EASY / NORMAL / HARD); tapping the level starts the game.
@@ -18,6 +21,7 @@ package main
 import (
 	"time"
 
+	"github.com/sat0ken/tinygo-cyd/games/othello"
 	"github.com/sat0ken/tinygo-cyd/platform"
 )
 
@@ -28,7 +32,7 @@ func main() {
 		println("platform.Init:", err.Error())
 		platform.Halt()
 	}
-	g := NewGame(d, t, uint32(time.Now().UnixNano()))
+	g := othello.NewGame(d, t, uint32(time.Now().UnixNano()))
 	g.DrawMenu()
 	println("10_othello: started")
 

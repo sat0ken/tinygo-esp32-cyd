@@ -1,4 +1,7 @@
-package main
+// Package othello is othello (reversi) against the CPU for a 480x272 touch
+// screen. It depends only on hal: examples/10_othello runs it alone,
+// cmd/games from a launcher.
+package othello
 
 import (
 	"image/color"
@@ -89,6 +92,10 @@ type Game struct {
 	// Now is the clock used to measure the CPU's thinking time.
 	Now func() time.Time
 
+	// OnExit, if set, shows a "< GAMES" button on the menu; tapping it
+	// calls OnExit (used by the cmd/games launcher).
+	OnExit func()
+
 	phase      phase
 	humanBlack bool // the player has the black stones (moves first)
 	level      int
@@ -138,6 +145,7 @@ func boardRect() rect { return rect{boardX, boardY, 8*cellSz + 1, 8*cellSz + 1} 
 
 func colorButton(k int) rect { return rect{90 + int16(k)*160, 100, 140, 44} } // 0 = black, 1 = white
 func levelButton(k int) rect { return rect{40 + int16(k)*140, 190, 120, 52} }
+func backButton() rect       { return rect{8, 8, 84, 28} }
 func undoButton() rect       { return rect{panelX, 214, 88, 40} }
 func newButton() rect        { return rect{panelX + 98, 214, 88, 40} }
 
@@ -184,10 +192,19 @@ func (g *Game) DrawMenu() {
 		g.fill(r, levelColors[k])
 		g.textCentered(r, &freesans.Bold12pt7b, lv.Name, textColor, 34)
 	}
+	if g.OnExit != nil {
+		r := backButton()
+		g.fill(r, btnColor)
+		g.textCentered(r, &proggy.TinySZ8pt7b, "< GAMES", textColor, 18)
+	}
 	g.d.Display()
 }
 
 func (g *Game) tapMenu(x, y int16) {
+	if g.OnExit != nil && backButton().has(x, y) {
+		g.OnExit()
+		return
+	}
 	for k := 0; k < 2; k++ {
 		if colorButton(k).has(x, y) {
 			g.humanBlack = k == 0

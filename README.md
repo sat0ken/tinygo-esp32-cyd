@@ -44,6 +44,16 @@ make examples                                # 全 example のビルド確認
 中身は `tinygo flash -target=./targets/esp32-4827s043.json -monitor <pkg>`。
 書き込めない場合は、BOOT ボタンを押したまま RST を押してダウンロードモードに入れる。
 
+### ゲームをまとめて遊ぶ（cmd/games）
+
+```sh
+make flash-noerase PKG=./cmd/games        # 実機
+make wasm PKG=./cmd/games && make serve   # ブラウザ
+```
+
+起動するとゲームを選ぶ画面が出る（INVADERS / SUDOKU / OTHELLO）。各ゲームの最初の画面にある「< GAMES」で選ぶ画面に戻る。
+ゲーム本体は `games/invaders`・`games/sudoku`・`games/othello` パッケージにあり、examples の 08・09・10 は1つずつ動かすだけの `main.go`。
+
 ### examples
 
 | 例 | 内容 | 確認すること |

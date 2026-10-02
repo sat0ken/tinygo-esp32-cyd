@@ -1,4 +1,4 @@
-package main
+package sudoku
 
 // Puzzle generation and solving. Pure logic, no drawing.
 //

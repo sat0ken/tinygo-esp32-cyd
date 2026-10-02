@@ -66,7 +66,9 @@ ESP32-4827S043（ESP32-S3 + 4.3インチ 480×272 RGB 液晶）を TinyGo で動
 | [slidepack/](../slidepack/slidepack.go) | 複数の全画面画像を1ファイルにまとめる形式 | 全部 |
 | [slideshow/](../slideshow/) | スライドショー本体（切り替え効果・キャプション・タッチ操作）と SD 用の読み込み | 全部 |
 | [app/](../app/app.go) | お絵描きアプリ（`cmd/app` の中身） | 全部 |
+| [games/](../games/) | ゲーム本体（invaders・sudoku・othello）。hal だけに依存 | 全部 |
 | [cmd/app/](../cmd/app/main.go) | 実機・ブラウザ共通のエントリポイント | 全部 |
+| [cmd/games/](../cmd/games/main.go) | ゲームを選んで遊ぶランチャー | 全部 |
 | [examples/](../examples/) | 01〜08 のサンプル | 例ごとに異なる |
 | [internal/](../internal/) | テスト補助（goldentest）、C 用 malloc 補助（espmalloc） | — |
 | [tools/](../tools/) | 画像変換（img2rgb565）、HTTP サーバ（serve）、ブラウザ検査（wasmcheck） | ホスト |
@@ -387,7 +389,7 @@ sequenceDiagram
 | 種類 | 場所 | 何を確かめるか |
 |---|---|---|
 | 計算 | [rgblcd/calc_test.go](../rgblcd/calc_test.go) | PCLK 分周・タイミング値・ディスクリプタを、ESP-IDF の式から手計算した値と比較 |
-| ゴールデン画像 | [app](../app/app_test.go)、[05](../examples/05_slideshow/main_test.go)、[07](../examples/07_breakout/game_test.go)、[08](../examples/08_invaders/game_test.go) | memlcd で描いた画面を `testdata/golden/*.png` とピクセル単位で比較 |
+| ゴールデン画像 | [app](../app/app_test.go)、[05](../examples/05_slideshow/main_test.go)、[07](../examples/07_breakout/game_test.go)、[08](../games/invaders/game_test.go) | memlcd で描いた画面を `testdata/golden/*.png` とピクセル単位で比較 |
 | ロジック | 各 `_test.go` | タッチ操作、スライドの切り替え、ゲームの自動プレイ、BMP 変換など |
 | ブラウザ | [tools/wasmcheck](../tools/wasmcheck/wasmcheck_test.go) | headless Chromium で canvas を読み、同じゴールデン画像と比較 |
 
@@ -575,28 +577,34 @@ flowchart TB
 - パドルに当たった位置で角度が決まる（中央 = 真上、端 = 60°）。
 - 速さ：220 px/s × (1 + 0.1 × (レベル − 1))。
 
-### 09 数独（[sudoku.go](../examples/09_sudoku/sudoku.go)、[game.go](../examples/09_sudoku/game.go)）
+### 09 数独（[sudoku.go](../games/sudoku/sudoku.go)、[game.go](../games/sudoku/game.go)）
 
 - 盤面は「乱数で完成した盤を作る → ランダムな順にマスを空ける → 解が2つ以上になるマスは戻す」で作るので、**解は必ず1つ**。間違いの判定は解と比べるだけでよい。
 - 解を数える探索は再帰を使わず、配列のスタックで書いている（実機のスタックを使い切らないため）。候補が最も少ないマスから試す。
 - 描画は、マスごとの「見た目」（背景色・文字色・数字）を覚えておき、変わったマスだけ描き直す。
 - 元にした Arduino スケッチ（Sparkadium/Sudoku-for-CYD）は GPL-3.0 のため、コードは移さず、遊び方だけを参考にして書いた。
 
-### 10 オセロ（[othello.go](../examples/10_othello/othello.go)、[game.go](../examples/10_othello/game.go)）
+### 10 オセロ（[othello.go](../games/othello/othello.go)、[game.go](../games/othello/game.go)）
 
 - 盤面は 64bit 整数2つ（手番側と相手側）。合法手は「8方向にシフトして、相手の石の並びの先が空いている所」をビット演算でまとめて求める。正しさは perft（初期局面から n 手先までの局面数の既知の値）で確かめている。
 - CPU はαβ探索（negamax）。評価は「マスの価値（隅が高く、隅の隣は低い）」＋「打てる手の数の差」。1手、2手…と深くしていき（反復深化）、**調べた局面数の上限**を超えたら直前の深さの結果を使う。時間ではなく局面数で打ち切るのは、テストで同じ結果を再現するため。
 - 探索中はヒープを使わない（手の並べ替えは呼び出し側のスタック上の配列に書く）。
 - 手番の進行は状態の切り替え（あなたの番 → 裏返しアニメーション → CPU の思考 → …、パス、終局）。CPU が考える前の更新で「THINKING...」を描いておく。
 
-### 08 インベーダー（[game.go](../examples/08_invaders/game.go)）
+### 08 インベーダー（[game.go](../games/invaders/game.go)）
 
-- 元祖と同じく、**1フレームに1体ずつ**動かす（[stepInvader](../examples/08_invaders/game.go#L631)）。全員が1歩動くのに「生きている数」フレームかかるので、数が減るほど速くなる。
+- 元祖と同じく、**1フレームに1体ずつ**動かす（[stepInvader](../games/invaders/game.go#L659)）。全員が1歩動くのに「生きている数」フレームかかるので、数が減るほど速くなる。
 - 1周（全員が1歩）の間に誰かが端に着いたら、次の1周は全員が下に 8px 移動し、向きが反転する。
 - 弾は 4px ずつ動かして当たり判定（すり抜け防止）。爆弾は同時に3発まで、乱数（xorshift、テストでは固定シード）で落とす。
 - トーチカは 4×4px のセルの集まりで、当たったセルだけ消える。
 
 ---
+
+### ランチャー（[cmd/games](../cmd/games/launcher.go)）
+
+- ゲームは `games/` のパッケージ。各ゲームの `OnExit` に関数を入れると、ゲームの最初の画面に「< GAMES」ボタンが出て、押すとその関数が呼ばれる（examples から単体で動かすときは `nil` なので出ない）。
+- ランチャーは選ばれたゲームを作り、毎フレーム `Update(dt)` を呼ぶだけ。`OnExit` が呼ばれたらゲームを捨てて（GC が回収）、選ぶ画面を描き直す。
+- **タップの持ち越しを防ぐ**：タイルをタップした指はまだ触れているので、そのままゲームに渡すとゲームの最初の画面でもタップとして扱われる（数独なら難易度ボタンが押される）。ゲームを始めた直後と戻った直後は、指が離れるまで入力を渡さない（`waitRelease`）。テストはタイルの「ゲームのボタンと重なる位置」をタップして、これを確かめている。
 
 ## 13. 運用：コマンド・よくある作業・トラブル
 

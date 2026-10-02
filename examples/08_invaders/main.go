@@ -1,4 +1,7 @@
-// 08_invaders is a space invaders game for the touch screen.
+// 08_invaders runs the space invaders game (package games/invaders) alone.
+// cmd/games has it together with the other games.
+//
+// The game:
 //
 //   - Slide your finger (or the mouse in the browser) to move the cannon.
 //   - While you touch the screen the cannon fires (one shot at a time).
@@ -17,6 +20,7 @@ package main
 import (
 	"time"
 
+	"github.com/sat0ken/tinygo-cyd/games/invaders"
 	"github.com/sat0ken/tinygo-cyd/platform"
 )
 
@@ -34,7 +38,7 @@ func main() {
 		println("platform.Init:", err.Error())
 		platform.Halt()
 	}
-	g := NewGame(d, t, uint32(time.Now().UnixNano()))
+	g := invaders.NewGame(d, t, uint32(time.Now().UnixNano()))
 	g.DrawAll()
 	println("08_invaders: started")
 
@@ -55,7 +59,7 @@ func main() {
 
 		frames++
 		if el := now.Sub(fpsStart); el >= 5*time.Second {
-			println("fps", frames*1000/int(el.Milliseconds()), "score", g.score, "lives", g.lives, "wave", g.wave, "invaders", g.alive)
+			println("fps", frames*1000/int(el.Milliseconds()), g.Status())
 			frames, fpsStart = 0, now
 		}
 		if !hasVSync {

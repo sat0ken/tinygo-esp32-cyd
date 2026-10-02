@@ -1,4 +1,7 @@
-// 09_sudoku is a sudoku game for the touch screen.
+// 09_sudoku runs the sudoku game (package games/sudoku) alone. cmd/games
+// has it together with the other games.
+//
+// The game:
 //
 //   - Choose EASY / MEDIUM / HARD (38 / 30 / 25 clues).
 //   - Tap a cell, then a digit on the pad. ERASE clears the cell, HINT
@@ -19,6 +22,7 @@ package main
 import (
 	"time"
 
+	"github.com/sat0ken/tinygo-cyd/games/sudoku"
 	"github.com/sat0ken/tinygo-cyd/platform"
 )
 
@@ -32,7 +36,7 @@ func main() {
 	// The seed comes from the time of the tap that starts a game, which
 	// differs every time even right after boot.
 	n := uint32(0)
-	g := NewGame(d, t, func() uint32 {
+	g := sudoku.NewGame(d, t, func() uint32 {
 		n++
 		return uint32(time.Now().UnixNano()) ^ n*0x9E3779B9
 	})

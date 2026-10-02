@@ -1,4 +1,4 @@
-package main
+package othello
 
 import "math/bits"
 

@@ -53,6 +53,7 @@ examples:
 		tinygo build -target=$(TARGET) -size short -o /dev/null ./examples/$$e || exit 1; \
 	done
 	@echo "== cmd/app"; tinygo build -target=$(TARGET) -size short -o /dev/null ./cmd/app
+	@echo "== cmd/games"; tinygo build -target=$(TARGET) -size short -o /dev/null ./cmd/games
 
 ## Browser ----------------------------------------------------------------
 
@@ -78,7 +79,7 @@ test-browser: wasm
 # Rewrite testdata/golden/*.png after an intended UI change. Check the new
 # images before committing them.
 update-golden:
-	go test ./app ./examples/05_slideshow ./examples/07_breakout ./examples/08_invaders ./examples/09_sudoku ./examples/10_othello -update
+	go test ./app ./cmd/games ./examples/05_slideshow ./examples/07_breakout ./games/... -update
 
 # Convert examples/05_slideshow/images/* to examples/05_slideshow/slides.pack.
 slides:

@@ -1,4 +1,6 @@
-package main
+// Package sudoku is a sudoku game for a 480x272 touch screen. It depends
+// only on hal: examples/09_sudoku runs it alone, cmd/games from a launcher.
+package sudoku
 
 import (
 	"image/color"
@@ -88,6 +90,10 @@ type Game struct {
 	// NewSeed returns the seed for the next puzzle.
 	NewSeed func() uint32
 
+	// OnExit, if set, shows a "< GAMES" button on the menu; tapping it
+	// calls OnExit (used by the cmd/games launcher).
+	OnExit func()
+
 	screen   screen
 	diff     int
 	puzzle   Board // clues
@@ -142,6 +148,8 @@ func buttonRect(k int) rect { // 0 = ERASE, 1 = HINT, 2 = NEW
 
 func menuButton(k int) rect { return rect{40 + int16(k)*140, 160, 120, 56} }
 
+func backButton() rect { return rect{8, 8, 84, 28} }
+
 // ---- drawing helpers ----
 
 func (g *Game) fill(r rect, c color.RGBA) { g.d.FillRectangle(r.x, r.y, r.w, r.h, c) }
@@ -165,6 +173,11 @@ func (g *Game) DrawMenu() {
 		g.fill(r, df.Color)
 		g.textCentered(r, &freesans.Bold12pt7b, df.Name, textColor, 36)
 		g.textCentered(rect{r.x, r.y + r.h, r.w, 0}, &proggy.TinySZ8pt7b, strconv.Itoa(df.Clues)+" clues", dimText, 18)
+	}
+	if g.OnExit != nil {
+		r := backButton()
+		g.fill(r, btnColor)
+		g.textCentered(r, &proggy.TinySZ8pt7b, "< GAMES", textColor, 18)
 	}
 	g.d.Display()
 }
@@ -354,6 +367,10 @@ func (g *Game) Update(dt float32) {
 
 	switch g.screen {
 	case menuScreen:
+		if tap && g.OnExit != nil && backButton().has(x, y) {
+			g.OnExit()
+			return
+		}
 		if tap {
 			for k := range difficulties {
 				if menuButton(k).has(x, y) {

@@ -1,4 +1,4 @@
-package main
+package invaders
 
 // sprite is a 1-bit bitmap, drawn at 2x (every bit is 2x2 pixels).
 type sprite struct {
