@@ -7,7 +7,7 @@ DUMP_MS   ?= 1500
 TINYGOROOT := $(shell tinygo env TINYGOROOT)
 
 PORTFLAG := $(if $(PORT),-port $(PORT),)
-EXAMPLES := 01_backlight 02_colorbars 03_tinydraw 04_touch 05_slideshow 06_sdslideshow 07_breakout 08_invaders 09_sudoku 10_othello 11_solitaire
+EXAMPLES := 01_backlight 02_colorbars 03_tinydraw 04_touch 05_slideshow 06_sdslideshow 07_breakout 08_invaders 09_sudoku 10_othello 11_solitaire 12_poker
 
 .PHONY: flash flash-noerase flash-slides monitor build examples wasm serve test test-browser update-golden slides clean
 

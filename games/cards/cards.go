@@ -187,11 +187,18 @@ func drawFace(d hal.Display, c Card, x, y, w, h int16, highlight, small bool) {
 		tinyfont.WriteLine(d, &freesans.Bold9pt7b, x+4, y+15, name, ink)
 		DrawSuit(d, c.Suit(), x+6+int16(tw), y+5, 1, ink)
 	}
-	// Big suit in the middle, a bit low so the corner stays readable.
-	DrawSuit(d, c.Suit(), x+(w-21)/2, y+(h-21)/2+8, 3, ink)
-	if c.Rank() > 10 {
-		// Face cards: the letter again above the big suit.
-		tinyfont.WriteLine(d, &freesans.Bold9pt7b, x+(w-int16(tw))/2, y+(h-21)/2+4, name, ink)
+	// Big suit in the middle, a bit low so the corner stays readable; even
+	// bigger on large cards.
+	scale := int16(3)
+	if w >= 80 {
+		scale = 5
+	}
+	big := 7 * scale
+	DrawSuit(d, c.Suit(), x+(w-big)/2, y+(h-big)/2+8, scale, ink)
+	if c.Rank() > 10 && h >= 70 {
+		// Face cards: the letter again above the big suit (on small cards
+		// it would run into the corner).
+		tinyfont.WriteLine(d, &freesans.Bold9pt7b, x+(w-int16(tw))/2, y+(h-big)/2+4, name, ink)
 	}
 }
 

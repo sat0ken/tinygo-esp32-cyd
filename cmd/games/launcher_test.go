@@ -46,15 +46,18 @@ func TestStartEachGameAndComeBack(t *testing.T) {
 		"SUDOKU":    {50, 22},
 		"OTHELLO":   {50, 22},
 		"SOLITAIRE": {37, 11},
+		"POKER":     {33, 253},
 	}
-	// Tap each tile where the game's first screen has a button (invaders:
-	// anywhere starts the game; sudoku: MEDIUM; othello: HARD), so a tap
-	// leaking into the game would be noticed.
+	// Tap each tile, where possible where the game's first screen has a
+	// button or a card (invaders: anywhere starts the game; othello: WHITE;
+	// solitaire: a column; poker: MAX BET), so a tap leaking into the game
+	// would be noticed. (No sudoku button is under its tile.)
 	taps := map[string][2]int16{
-		"INVADERS":  {60, 150},
-		"SUDOKU":    {200, 190},
-		"OTHELLO":   {335, 210},
-		"SOLITAIRE": {414, 150},
+		"INVADERS":  {60, 80},
+		"SUDOKU":    {240, 80},
+		"OTHELLO":   {350, 120},
+		"SOLITAIRE": {60, 150},
+		"POKER":     {200, 238},
 	}
 	for k, e := range entries {
 		l, d, touch := newTestLauncher()

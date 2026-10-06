@@ -51,8 +51,8 @@ make flash-noerase PKG=./cmd/games        # 実機
 make wasm PKG=./cmd/games && make serve   # ブラウザ
 ```
 
-起動するとゲームを選ぶ画面が出る（INVADERS / SUDOKU / OTHELLO / SOLITAIRE）。各ゲームの最初の画面にある「< GAMES」で選ぶ画面に戻る。
-ゲーム本体は `games/invaders`・`games/sudoku`・`games/othello`・`games/solitaire` パッケージにあり（トランプの部品は `games/cards`）、examples の 08〜11 は1つずつ動かすだけの `main.go`。
+起動するとゲームを選ぶ画面が出る（INVADERS / SUDOKU / OTHELLO / SOLITAIRE / POKER）。各ゲームの最初の画面にある「< GAMES」で選ぶ画面に戻る。
+ゲーム本体は `games/invaders`・`games/sudoku`・`games/othello`・`games/solitaire`・`games/poker` パッケージにあり（トランプの部品は `games/cards`）、examples の 08〜12 は1つずつ動かすだけの `main.go`。
 
 ### examples
 
@@ -69,6 +69,7 @@ make wasm PKG=./cmd/games && make serve   # ブラウザ
 | 09_sudoku | 数独。難易度3段階（ヒント 38/30/25 個）、解が必ず1つの盤面を生成。マスを選んで数字パッドで入力、ERASE・HINT・NEW、ハイライト、間違いは赤、経過時間とミス数。wasm でも動く。[Sparkadium/Sudoku-for-CYD](https://github.com/Sparkadium/Sudoku-for-CYD) を参考にした独自実装 | マスと数字パッドの位置がタッチと合う |
 | 10_othello | オセロ（CPU 対戦）。先手/後手と強さ（EASY / NORMAL / HARD）を選ぶ。打てる場所に点、直前の手に赤い点、石が1つずつ裏返るアニメーション、UNDO。CPU はビットボード＋αβ探索（HARD は6手読み・終盤12マスは読み切り）。wasm でも動く | HARD の思考時間（右下とログの depth / nodes / ms） |
 | 11_solitaire | ソリティア（クロンダイク）。カードをタップすると置ける場所へ自動で動く（1枚なら組札優先）。山札のタップでめくる、1枚/3枚めくり、UNDO（200手）、最後は自動で片付け。長い列は重なりを詰めて画面に収める。wasm でも動く | カードのタップ位置、3枚めくりの表示 |
+| 12_poker | ビデオポーカー（ジャックス・オア・ベター、9/6 配当）。BET ONE / MAX BET で賭けて DEAL、残すカードをタップ（HELD）して DRAW。上の配当表で賭け数の列が赤、できている役の行が光る。クレジットが尽きたら DEAL で 100 補充。wasm でも動く | カードのタップで HELD が切り替わる、ボタンの位置 |
 
 02_colorbars はシリアルから1文字コマンドを受け付ける：
 `c` カラーバー、`r`/`g`/`b`/`w`/`k` 単色（赤/緑/青/白/黒）、`d` レジスタを再ダンプ。

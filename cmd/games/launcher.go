@@ -7,6 +7,7 @@ import (
 	"github.com/sat0ken/tinygo-cyd/games/cards"
 	"github.com/sat0ken/tinygo-cyd/games/invaders"
 	"github.com/sat0ken/tinygo-cyd/games/othello"
+	"github.com/sat0ken/tinygo-cyd/games/poker"
 	"github.com/sat0ken/tinygo-cyd/games/solitaire"
 	"github.com/sat0ken/tinygo-cyd/games/sudoku"
 	"github.com/sat0ken/tinygo-cyd/hal"
@@ -67,9 +68,16 @@ var entries = []entry{
 		g.Start()
 		return g
 	}},
+	{"POKER", "jacks or better", drawPokerIcon, func(l *Launcher) game {
+		g := poker.NewGame(l.d, l.t, l.Seed)
+		g.OnExit = l.exit
+		g.Start()
+		return g
+	}},
 }
 
-func tileRect(k int) rect { return rect{12 + int16(k)*116, 64, 108, 176} }
+// tileRect is tile k of a 3x2 grid (one place is still free).
+func tileRect(k int) rect { return rect{10 + int16(k%3)*156, 32 + int16(k/3)*108, 148, 100} }
 
 // Fonts of the tiles (TestTilesFit checks that the texts fit).
 var (
@@ -112,6 +120,8 @@ func (l *Launcher) Playing() string {
 		return "OTHELLO"
 	case *solitaire.Game:
 		return "SOLITAIRE"
+	case *poker.Game:
+		return "POKER"
 	}
 	return "?"
 }
@@ -120,13 +130,13 @@ func (l *Launcher) Playing() string {
 func (l *Launcher) DrawMenu() {
 	w, h := l.d.Size()
 	l.d.FillRectangle(0, 0, w, h, bgColor)
-	center(l.d, rect{0, 0, w, 0}, &freesans.Bold18pt7b, "TINYGO GAMES", textColor, 40)
+	center(l.d, rect{0, 0, w, 0}, &freesans.Bold12pt7b, "TINYGO GAMES", textColor, 23)
 	for k, e := range entries {
 		r := tileRect(k)
 		l.d.FillRectangle(r.x, r.y, r.w, r.h, tileColor)
-		e.icon(l, rect{r.x + 8, r.y + 14, r.w - 16, 100})
-		center(l.d, r, nameFont, e.name, textColor, 140)
-		center(l.d, r, aboutFont, e.about, dimText, 162)
+		e.icon(l, rect{r.x + 8, r.y + 5, r.w - 16, 56})
+		center(l.d, r, nameFont, e.name, textColor, 78)
+		center(l.d, r, aboutFont, e.about, dimText, 93)
 	}
 	center(l.d, rect{0, 0, w, 0}, &proggy.TinySZ8pt7b, "tap a game", dimText, 262)
 	l.d.Display()
@@ -187,7 +197,7 @@ func drawInvaderIcon(l *Launcher, r rect) {
 		"#.#.....#.#",
 		"...##.##...",
 	}
-	const px = 7
+	const px = 6
 	x0 := r.x + (r.w-int16(len(art[0]))*px)/2
 	y0 := r.y + (r.h-int16(len(art))*px)/2
 	for y, row := range art {
@@ -200,7 +210,7 @@ func drawInvaderIcon(l *Launcher, r rect) {
 }
 
 func drawSudokuIcon(l *Launcher, r rect) {
-	const cell = 28
+	const cell = 18
 	x0 := r.x + (r.w-3*cell)/2
 	y0 := r.y + (r.h-3*cell)/2
 	for i := int16(0); i <= 3; i++ {
@@ -211,12 +221,12 @@ func drawSudokuIcon(l *Launcher, r rect) {
 		c, r int16
 		s    string
 	}{{0, 0, "5"}, {2, 0, "3"}, {1, 1, "9"}, {0, 2, "7"}, {2, 2, "1"}} {
-		tinyfont.WriteLine(l.d, &freesans.Bold12pt7b, x0+d.c*cell+8, y0+d.r*cell+22, d.s, digitColor)
+		tinyfont.WriteLine(l.d, &freesans.Bold9pt7b, x0+d.c*cell+5, y0+d.r*cell+16, d.s, digitColor)
 	}
 }
 
 func drawOthelloIcon(l *Launcher, r rect) {
-	const cell = 38
+	const cell = 27
 	x0 := r.x + (r.w-2*cell)/2
 	y0 := r.y + (r.h-2*cell)/2
 	l.d.FillRectangle(x0, y0, 2*cell, 2*cell, greenBoard)
@@ -227,18 +237,28 @@ func drawOthelloIcon(l *Launcher, r rect) {
 		if k == 1 || k == 2 {
 			c = color.RGBA{25, 25, 25, 255}
 		}
-		tinydraw.FilledCircle(l.d, cx, cy, 15, c)
+		tinydraw.FilledCircle(l.d, cx, cy, 11, c)
 	}
 }
 
 func drawSolitaireIcon(l *Launcher, r rect) {
 	// Three fanned cards: a back and two faces.
-	const w, h = 46, 62
-	x0 := r.x + (r.w-w-2*14)/2
+	const w, h, step = 46, 54, 16
+	x0 := r.x + (r.w-w-2*step)/2
 	y0 := r.y + (r.h-h)/2
 	cards.DrawBack(l.d, x0, y0, w, h)
-	cards.DrawFace(l.d, cards.New(cards.Hearts, 1), x0+14, y0, w, h, false)
-	cards.DrawFace(l.d, cards.New(cards.Spades, 13), x0+28, y0, w, h, false)
+	cards.DrawFace(l.d, cards.New(cards.Hearts, 1), x0+step, y0, w, h, false)
+	cards.DrawFace(l.d, cards.New(cards.Spades, 13), x0+2*step, y0, w, h, false)
+}
+
+func drawPokerIcon(l *Launcher, r rect) {
+	// A royal flush, fanned; only the corners of the first four show.
+	const w, h, step = 38, 54, 16
+	x0 := r.x + (r.w-w-4*step)/2
+	y0 := r.y + (r.h-h)/2
+	for k, rank := range []int{10, 11, 12, 13, 1} {
+		cards.DrawFaceSmall(l.d, cards.New(cards.Diamonds, rank), x0+int16(k)*step, y0, w, h)
+	}
 }
 
 // vsyncWaiter is implemented by rgblcd.Device.
