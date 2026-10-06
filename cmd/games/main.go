@@ -1,9 +1,9 @@
-// Command games is a launcher for the games: choose INVADERS, SUDOKU or
-// OTHELLO on the first screen; the "< GAMES" button on a game's first
-// screen comes back here.
+// Command games is a launcher for the games: choose INVADERS, SUDOKU,
+// OTHELLO or SOLITAIRE on the first screen; the "< GAMES" button of a game
+// comes back here.
 //
-// The games are the packages games/invaders, games/sudoku and
-// games/othello; examples/08, 09 and 10 run each of them alone.
+// The games are the packages games/invaders, games/sudoku, games/othello
+// and games/solitaire; examples/08 to 11 run each of them alone.
 //
 //	make flash-noerase PKG=./cmd/games && make monitor
 //	make wasm PKG=./cmd/games && make serve

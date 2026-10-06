@@ -8,7 +8,6 @@ import (
 	"github.com/sat0ken/tinygo-cyd/internal/goldentest"
 	"github.com/sat0ken/tinygo-cyd/memlcd"
 	"tinygo.org/x/tinyfont"
-	"tinygo.org/x/tinyfont/proggy"
 )
 
 const dt = float32(1.0 / 60)
@@ -43,17 +42,19 @@ func TestMenu(t *testing.T) {
 func TestStartEachGameAndComeBack(t *testing.T) {
 	// Where the "< GAMES" button is on each game's first screen.
 	backs := map[string][2]int16{
-		"INVADERS": {board.Width - 40, 10},
-		"SUDOKU":   {50, 22},
-		"OTHELLO":  {50, 22},
+		"INVADERS":  {board.Width - 40, 10},
+		"SUDOKU":    {50, 22},
+		"OTHELLO":   {50, 22},
+		"SOLITAIRE": {37, 11},
 	}
 	// Tap each tile where the game's first screen has a button (invaders:
 	// anywhere starts the game; sudoku: MEDIUM; othello: HARD), so a tap
 	// leaking into the game would be noticed.
 	taps := map[string][2]int16{
-		"INVADERS": {100, 150},
-		"SUDOKU":   {240, 200},
-		"OTHELLO":  {380, 210},
+		"INVADERS":  {60, 150},
+		"SUDOKU":    {200, 190},
+		"OTHELLO":   {335, 210},
+		"SOLITAIRE": {414, 150},
 	}
 	for k, e := range entries {
 		l, d, touch := newTestLauncher()
@@ -92,11 +93,19 @@ func launcherImage() *image.RGBA {
 	return d.Image()
 }
 
-func TestDescriptionsFitTheirTiles(t *testing.T) {
+func TestTilesFit(t *testing.T) {
 	for k, e := range entries {
-		_, w := tinyfont.LineWidth(&proggy.TinySZ8pt7b, e.about)
-		if int16(w) > tileRect(k).w-8 {
-			t.Errorf("%s: description %q is %dpx, tile is %dpx", e.name, e.about, w, tileRect(k).w)
+		r := tileRect(k)
+		for _, x := range []struct {
+			font tinyfont.Fonter
+			text string
+		}{{nameFont, e.name}, {aboutFont, e.about}} {
+			if _, w := tinyfont.LineWidth(x.font, x.text); int16(w) > r.w-8 {
+				t.Errorf("%s: %q is %dpx, tile is %dpx", e.name, x.text, w, r.w)
+			}
 		}
+	}
+	if last := tileRect(len(entries) - 1); last.x+last.w > board.Width {
+		t.Errorf("tiles end at %d", last.x+last.w)
 	}
 }

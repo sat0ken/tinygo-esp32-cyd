@@ -4,8 +4,10 @@ import (
 	"image/color"
 	"time"
 
+	"github.com/sat0ken/tinygo-cyd/games/cards"
 	"github.com/sat0ken/tinygo-cyd/games/invaders"
 	"github.com/sat0ken/tinygo-cyd/games/othello"
+	"github.com/sat0ken/tinygo-cyd/games/solitaire"
 	"github.com/sat0ken/tinygo-cyd/games/sudoku"
 	"github.com/sat0ken/tinygo-cyd/hal"
 	"tinygo.org/x/tinydraw"
@@ -41,27 +43,39 @@ type entry struct {
 }
 
 var entries = []entry{
-	{"INVADERS", "slide, hold to fire", drawInvaderIcon, func(l *Launcher) game {
+	{"INVADERS", "hold to fire", drawInvaderIcon, func(l *Launcher) game {
 		g := invaders.NewGame(l.d, l.t, l.Seed())
 		g.OnExit = l.exit
 		g.DrawAll()
 		return g
 	}},
-	{"SUDOKU", "3 difficulty levels", drawSudokuIcon, func(l *Launcher) game {
+	{"SUDOKU", "3 levels", drawSudokuIcon, func(l *Launcher) game {
 		g := sudoku.NewGame(l.d, l.t, l.Seed)
 		g.OnExit = l.exit
 		g.DrawMenu()
 		return g
 	}},
-	{"OTHELLO", "against the CPU", drawOthelloIcon, func(l *Launcher) game {
+	{"OTHELLO", "vs the CPU", drawOthelloIcon, func(l *Launcher) game {
 		g := othello.NewGame(l.d, l.t, l.Seed())
 		g.OnExit = l.exit
 		g.DrawMenu()
 		return g
 	}},
+	{"SOLITAIRE", "draw 1 or 3", drawSolitaireIcon, func(l *Launcher) game {
+		g := solitaire.NewGame(l.d, l.t, l.Seed)
+		g.OnExit = l.exit
+		g.Start()
+		return g
+	}},
 }
 
-func tileRect(k int) rect { return rect{24 + int16(k)*148, 64, 136, 176} }
+func tileRect(k int) rect { return rect{12 + int16(k)*116, 64, 108, 176} }
+
+// Fonts of the tiles (TestTilesFit checks that the texts fit).
+var (
+	nameFont  = &freesans.Bold9pt7b
+	aboutFont = &proggy.TinySZ8pt7b
+)
 
 // Launcher shows the list of games and runs the chosen one. Each game gets
 // an OnExit callback, which shows a "< GAMES" button on its first screen.
@@ -96,6 +110,8 @@ func (l *Launcher) Playing() string {
 		return "SUDOKU"
 	case *othello.Game:
 		return "OTHELLO"
+	case *solitaire.Game:
+		return "SOLITAIRE"
 	}
 	return "?"
 }
@@ -108,9 +124,9 @@ func (l *Launcher) DrawMenu() {
 	for k, e := range entries {
 		r := tileRect(k)
 		l.d.FillRectangle(r.x, r.y, r.w, r.h, tileColor)
-		e.icon(l, rect{r.x + 18, r.y + 14, r.w - 36, 100})
-		center(l.d, r, &freesans.Bold12pt7b, e.name, textColor, 140)
-		center(l.d, r, &proggy.TinySZ8pt7b, e.about, dimText, 162)
+		e.icon(l, rect{r.x + 8, r.y + 14, r.w - 16, 100})
+		center(l.d, r, nameFont, e.name, textColor, 140)
+		center(l.d, r, aboutFont, e.about, dimText, 162)
 	}
 	center(l.d, rect{0, 0, w, 0}, &proggy.TinySZ8pt7b, "tap a game", dimText, 262)
 	l.d.Display()
@@ -171,7 +187,7 @@ func drawInvaderIcon(l *Launcher, r rect) {
 		"#.#.....#.#",
 		"...##.##...",
 	}
-	const px = 8
+	const px = 7
 	x0 := r.x + (r.w-int16(len(art[0]))*px)/2
 	y0 := r.y + (r.h-int16(len(art))*px)/2
 	for y, row := range art {
@@ -184,7 +200,7 @@ func drawInvaderIcon(l *Launcher, r rect) {
 }
 
 func drawSudokuIcon(l *Launcher, r rect) {
-	const cell = 30
+	const cell = 28
 	x0 := r.x + (r.w-3*cell)/2
 	y0 := r.y + (r.h-3*cell)/2
 	for i := int16(0); i <= 3; i++ {
@@ -195,12 +211,12 @@ func drawSudokuIcon(l *Launcher, r rect) {
 		c, r int16
 		s    string
 	}{{0, 0, "5"}, {2, 0, "3"}, {1, 1, "9"}, {0, 2, "7"}, {2, 2, "1"}} {
-		tinyfont.WriteLine(l.d, &freesans.Bold12pt7b, x0+d.c*cell+9, y0+d.r*cell+23, d.s, digitColor)
+		tinyfont.WriteLine(l.d, &freesans.Bold12pt7b, x0+d.c*cell+8, y0+d.r*cell+22, d.s, digitColor)
 	}
 }
 
 func drawOthelloIcon(l *Launcher, r rect) {
-	const cell = 40
+	const cell = 38
 	x0 := r.x + (r.w-2*cell)/2
 	y0 := r.y + (r.h-2*cell)/2
 	l.d.FillRectangle(x0, y0, 2*cell, 2*cell, greenBoard)
@@ -211,8 +227,18 @@ func drawOthelloIcon(l *Launcher, r rect) {
 		if k == 1 || k == 2 {
 			c = color.RGBA{25, 25, 25, 255}
 		}
-		tinydraw.FilledCircle(l.d, cx, cy, 16, c)
+		tinydraw.FilledCircle(l.d, cx, cy, 15, c)
 	}
+}
+
+func drawSolitaireIcon(l *Launcher, r rect) {
+	// Three fanned cards: a back and two faces.
+	const w, h = 46, 62
+	x0 := r.x + (r.w-w-2*14)/2
+	y0 := r.y + (r.h-h)/2
+	cards.DrawBack(l.d, x0, y0, w, h)
+	cards.DrawFace(l.d, cards.New(cards.Hearts, 1), x0+14, y0, w, h, false)
+	cards.DrawFace(l.d, cards.New(cards.Spades, 13), x0+28, y0, w, h, false)
 }
 
 // vsyncWaiter is implemented by rgblcd.Device.
