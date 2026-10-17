@@ -1,4 +1,4 @@
-package xpttouch
+package touchcal
 
 import "testing"
 
@@ -34,7 +34,7 @@ func TestFromCornersGood(t *testing.T) {
 	raw := [4][2]int32{rawAt(20, 20), rawAt(459, 20), rawAt(459, 251), rawAt(20, 251)}
 	raw[0][0] += 15
 	raw[2][1] -= 20
-	c, err := FromCorners(raw, 480, 272, 20)
+	c, err := FromCorners(raw, 480, 272, 20, 1000, 500)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +54,7 @@ func TestFromCornersGood(t *testing.T) {
 	for i, r := range raw {
 		swapped[i] = [2]int32{r[1], r[0]}
 	}
-	c, err = FromCorners(swapped, 480, 272, 20)
+	c, err = FromCorners(swapped, 480, 272, 20, 1000, 500)
 	if err != nil || !c.SwapXY {
 		t.Fatalf("swap: %+v %v", c, err)
 	}
@@ -73,7 +73,7 @@ func TestFromCornersRejectsRandomTouches(t *testing.T) {
 		{{3749, 2140}, {2451, 1447}, {2358, 2711}, {1483, 1617}},
 	}
 	for i, raw := range bad {
-		if c, err := FromCorners(raw, 480, 272, 20); err == nil {
+		if c, err := FromCorners(raw, 480, 272, 20, 1000, 500); err == nil {
 			t.Errorf("%d: accepted %+v", i, c)
 		}
 	}
