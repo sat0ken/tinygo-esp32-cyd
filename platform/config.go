@@ -1,5 +1,11 @@
+//go:build !esp32_3248s035c
+
 // Package platform initialises the display and touch for the current build
-// target: the real board (esp32s3) or the browser (js/wasm).
+// target: the ESP32-4827S043 (esp32s3), the ESP32-3248S035C (build tag
+// esp32_3248s035c), the browser (js/wasm) or the host (tests).
+//
+// config.go is the ESP32-4827S043 configuration; it also builds on the
+// host and in the browser, where the values are used for the screen size.
 package platform
 
 import (

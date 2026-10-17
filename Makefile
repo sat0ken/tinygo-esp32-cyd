@@ -9,7 +9,14 @@ TINYGOROOT := $(shell tinygo env TINYGOROOT)
 PORTFLAG := $(if $(PORT),-port $(PORT),)
 EXAMPLES := 01_backlight 02_colorbars 03_tinydraw 04_touch 05_slideshow 06_sdslideshow 07_breakout 08_invaders 09_sudoku 10_othello 11_solitaire 12_poker
 
-.PHONY: flash flash-noerase flash-slides monitor build examples wasm serve test test-browser update-golden slides clean
+# ESP32-3248S035C (3.5" ST7796 SPI panel, GT911 touch) and the programs that
+# run on it (the others use the RGB panel, PWM or the SD bus of the S043).
+S035      := ./targets/esp32-3248s035c.json
+S035_PKGS := ./examples/s035_check ./examples/03_tinydraw ./examples/07_breakout \
+	./examples/08_invaders ./examples/09_sudoku ./examples/10_othello \
+	./examples/11_solitaire ./examples/12_poker ./cmd/app ./cmd/games
+
+.PHONY: flash flash-noerase flash-slides flash-s035 monitor build examples examples-s035 wasm serve test test-browser update-golden slides clean
 
 ## Board ------------------------------------------------------------------
 
@@ -54,6 +61,20 @@ examples:
 	done
 	@echo "== cmd/app"; tinygo build -target=$(TARGET) -size short -o /dev/null ./cmd/app
 	@echo "== cmd/games"; tinygo build -target=$(TARGET) -size short -o /dev/null ./cmd/games
+
+## ESP32-3248S035C ---------------------------------------------------------
+
+# make flash-s035 PKG=./examples/s035_check
+# make flash-s035 PKG=./cmd/games PORT=/dev/ttyUSB0
+flash-s035:
+	tinygo flash -target=$(S035) $(PORTFLAG) -monitor $(PKG)
+
+# Build every program that runs on the ESP32-3248S035C (compile check).
+examples-s035:
+	@for p in $(S035_PKGS); do \
+		echo "== $$p"; \
+		tinygo build -target=$(S035) -size short -o /dev/null $$p || exit 1; \
+	done
 
 ## Browser ----------------------------------------------------------------
 

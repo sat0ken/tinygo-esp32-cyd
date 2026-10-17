@@ -23,6 +23,7 @@ ESP32-4827S043（ESP32-S3 + 4.3インチ 480×272 RGB 液晶）を TinyGo で動
 12. [ゲーム（07〜12）](#12-ゲーム0712)
 13. [運用：コマンド・よくある作業・トラブル](#13-運用コマンドよくある作業トラブル)
 14. [未解決・注意事項](#14-未解決注意事項)
+15. [ESP32-3248S035C（3.5インチ・SPI 液晶）](#15-esp32-3248s035c35インチspi-液晶)
 
 ---
 
@@ -61,7 +62,9 @@ ESP32-4827S043（ESP32-S3 + 4.3インチ 480×272 RGB 液晶）を TinyGo で動
 | [wasmlcd/](../wasmlcd/wasmlcd.go) | ブラウザの canvas に表示・マウス/タッチを入力にする | ブラウザ |
 | [memlcd/](../memlcd/memlcd.go) | メモリ上の表示（テスト用、PNG 出力） | ホスト |
 | [platform/](../platform/) | ビルド先に応じて上の3つを選んで初期化 | 全部 |
-| [xpttouch/](../xpttouch/) | XPT2046 タッチの読み取りとキャリブレーション | 実機（計算はホストでもテスト） |
+| [xpttouch/](../xpttouch/) | XPT2046 タッチの読み取り | 実機 |
+| [touchcal/](../touchcal/calib.go) | タッチの raw 値 → 画面座標、4隅からのキャリブレーション | 全部 |
+| [board/s035/](../board/s035/s035.go)・[st7796/](../st7796/st7796.go)・[gt911/](../gt911/gt911.go)・[viewport/](../viewport/viewport.go) | ESP32-3248S035C 用（[15章](#15-esp32-3248s035c35インチspi-液晶)） | 実機（ドライバはホストでもテスト） |
 | [flashmap/](../flashmap/flashmap.go) | フラッシュの任意の領域を MMU でメモリとして読めるようにする | 実機 |
 | [slidepack/](../slidepack/slidepack.go) | 複数の全画面画像を1ファイルにまとめる形式 | 全部 |
 | [slideshow/](../slideshow/) | スライドショー本体（切り替え効果・キャプション・タッチ操作）と SD 用の読み込み | 全部 |
@@ -410,9 +413,9 @@ flowchart LR
 
 - XPT2046（抵抗膜）。tinygo drivers の [xpt2046](https://github.com/tinygo-org/drivers/tree/release/xpt2046) を使う。このドライバは **SPI を GPIO で1ビットずつ操作（ビットバング）** しており、読み取りに時間がかかる。
 - ピン：SCK=12、MOSI=11、MISO=13、CS=38、INT=18（押されると Low）。SCK/MOSI/MISO は microSD と共有。
-- [xpttouch.ReadRaw](../xpttouch/xpttouch.go#L30)：ドライバが返す 16bit 値を 12bit に戻す。[Calibration.Map](../xpttouch/calib.go#L18)：raw 値を画面座標に線形変換し、画面内に収める。
+- [xpttouch.ReadRaw](../xpttouch/xpttouch.go#L30)：ドライバが返す 16bit 値を 12bit に戻す。[Calibration.Map](../touchcal/calib.go#L18)：raw 値を画面座標に線形変換し、画面内に収める。
 - キャリブレーション値は [board.go](../board/board.go) の `TouchRaw*`（実測：X 172〜3940、Y 3884〜329、軸の入れ替えなし）。測り直しは [04_touch](../examples/04_touch/main.go)。
-- [FromCorners](../xpttouch/calib.go#L48)：4隅のタップから値を求める。軸の入れ替わりを検出し、範囲が狭すぎる・同じ辺の2点が食い違う・向きが逆、のときは失敗にする。
+- [FromCorners](../touchcal/calib.go)：4隅のタップから値を求める。軸の入れ替わりを検出し、範囲が狭すぎる・同じ辺の2点が食い違う・向きが逆、のときは失敗にする。
 
 ---
 
@@ -678,3 +681,43 @@ flowchart TB
 - **タッチの読み取りが遅い**：xpt2046 ドライバがビットバングで、各クロックで `time.Sleep` を呼ぶ。ゲームの fps が下がるならサンプル数を減らす。
 - **PSRAM と Wi-Fi は未使用**：使う場合はメモリ計画（[5章](#5-メモリの使い方)）を見直す。
 - **フェーズ8（VSYNC 割り込み）・フェーズ10（メモリ節約モード）は未実装**。
+
+---
+
+## 15. ESP32-3248S035C（3.5インチ・SPI 液晶）
+
+ESP32（無印、PSRAM なし）、ST7796（320×480、SPI）、GT911（静電容量タッチ、I2C）。横向き 480×320 で使う。ピンと設定値は [board/s035](../board/s035/s035.go) にまとめてある。
+
+### S043 との違い
+
+| | ESP32-4827S043 | ESP32-3248S035C |
+|---|---|---|
+| CPU・RAM | ESP32-S3、内蔵 SRAM 512KB | ESP32、TinyGo が使える DRAM は 192KB |
+| 液晶 | RGB パラレル、DMA が常にフレームバッファを送る | SPI（40MHz）、液晶側が画面のメモリを持つ |
+| 描画 | フレームバッファに書くだけ（速い） | 描くたびに SPI で送る（[st7796](../st7796/st7796.go)） |
+| タッチ | XPT2046（抵抗膜、SPI ビットバング） | GT911（静電容量、I2C 400kHz） |
+| ターゲット | esp32s3-generic を継承 | [esp32-generic](../targets/esp32-3248s035c.json) を継承（I2C のピン定数が要るため） |
+
+### 描画（st7796）
+
+- 480×320×2 = 300KB のフレームバッファは RAM に入らないので持たない。`FillRectangle` は「アドレス窓（CASET・RASET）→ RAMWR → 色を繰り返し送る」。`DrawRGBBitmap8` のバイト列（ビッグエンディアン RGB565）はそのまま液晶の形式なので、そのまま送る。
+- **SetPixel のまとめ送り**：1点ごとに窓を設定すると遅い。tinyfont は文字を左上から1行ずつ1点ずつ描くので、同じ行で右に続く同じ色の点を「ラン」にまとめ、続かなくなったときに1本の矩形として送る。まだ送っていないランは `Display()` か次の描画で送る。
+- 前回と同じ CASET・RASET は送らない（同じ行のランは列だけ変わる）。
+- テストは液晶の側を真似る [panel](../st7796/st7796_test.go)（コマンドを解釈して画素を持つ）を作り、フレームバッファに同じものを描いた結果と画素単位で比べる。
+
+### 480×272 のプログラムを動かす（viewport）
+
+- `platform.Init()` は画面中央（y = 24〜295）の 480×272 の [viewport](../viewport/viewport.go) を返す。描画は 24px 下にずらして窓の外を切り、タッチは逆にずらす（窓の外のタッチは近い辺に寄せる：上の帯を少し外れて押してもボタンに当たる）。
+- `platform.Init()` のタッチは、読む前に液晶の未送信のランを送る（`flushTouch`）。ゲームは毎フレーム必ずタッチを読むので、`Display()` を呼ばないコードでも最後に描いた文字が画面に出る。
+- 画面全体を使うときは `platform.InitScreen()`（480×320）と `platform.InitTouch()`。
+
+### タッチ（gt911）
+
+- GT911 は約 100 回/秒測る。状態レジスタ 0x814E の bit7 が「新しい値がある」、下位4ビットが点の数。読んだら 0 を書いて次の測定を受け取る。新しい値がない間は前の状態を返す（毎フレーム読んでもよい）。
+- I2C アドレスはリセット時に 0x5D か 0x14 に決まる。INT ピンは資料で 21 と 36 に分かれているので使わず、両方のアドレスを試す。見つからなければ RST（GPIO25）でリセットしてもう一度試す。
+- GT911 の座標は縦向き。横向き（MADCTL 0x28）では GT911 の Y が画面の X、GT911 の X が画面の下→上になる。変換は [touchcal](../touchcal/calib.go)（`SwapXY` と左右・上下の raw 値）。
+- **TinyGo の I2C の不具合への対処**：ESP32 の I2C ドライバはピンの出力を `GPIO.ENABLE_W1TS.Set(1 << pin)` で有効にするが、32 番以上のピンは ENABLE1 側にあるので 0 になり、SCL（32）・SDA（33）が駆動されない。[platform_s035.go](../platform/platform_s035.go) の `enableHighPins` で ENABLE1 のビットを立てている。
+
+### 実機で確かめること（s035_check）
+
+[s035_check](../examples/s035_check/main.go) を書き込み、ログ・色の帯・向き・タッチを見る。シリアルのコマンドで MADCTL（`r` 180度、`o` 赤青）・反転（`i`）を切り替えられ、`k` で4隅のキャリブレーション、`f`・`t` で描画速度を測る。合っていたら値を board/s035 に書く。

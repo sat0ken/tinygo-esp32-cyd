@@ -4,6 +4,8 @@ Sunton ESP32-4827S043（ESP32-S3、4.3インチ 480×272 RGB565パラレル液�
 液晶は LCD_CAM + GDMA の循環DMAで常時リフレッシュされる（CPU介入なし）。
 同じアプリをブラウザ（wasm）でも動かせる。
 
+ESP32-3248S035C（ESP32、3.5インチ 480×320 SPI 液晶、静電容量タッチ）にも対応している（[下記](#esp32-3248s035c35インチ)）。
+
 ## 必要なもの
 
 - TinyGo 0.42 以降（`tinygo version`）
@@ -19,6 +21,11 @@ hal/          アプリが依存するインターフェース（Display, Touch�
 framebuf/     RGB565フレームバッファへの描画（全バックエンド共通）
 rgblcd/       ESP32-S3 LCD_CAM + GDMA ドライバ（Config でピン・タイミングを受け取る）
 xpttouch/     XPT2046 タッチ → 画面座標（hal.Touch）
+touchcal/     タッチの raw 値 → 画面座標の変換とキャリブレーション（xpttouch・gt911 共通）
+board/s035/   ESP32-3248S035C のピン番号・設定値
+st7796/       ST7796 SPI 液晶ドライバ（フレームバッファなし、ESP32-3248S035C）
+gt911/        GT911 静電容量タッチ（I2C）→ 画面座標（hal.Touch）
+viewport/     大きい画面の中の小さい窓（480×320 の中で 480×272 のゲームを動かす）
 wasmlcd/      ブラウザ用バックエンド（canvas + pointer イベント）
 memlcd/       メモリ上バックエンド（テスト用、PNG 出力）
 platform/     ビルドタグで実機 / wasm / ホストを切り替える初期化
@@ -28,6 +35,7 @@ web/          index.html（app.wasm と wasm_exec.js は make wasm で生成）
 examples/     01_backlight, 02_colorbars, 03_tinydraw, 04_touch
 testdata/golden/  ゴールデン画像
 targets/esp32-4827s043.json  カスタムターゲット（esp32s3-generic 継承、serial=uart）
+targets/esp32-3248s035c.json ESP32-3248S035C のターゲット（esp32-generic 継承）
 tools/serve   wasm 用の簡易 HTTP サーバ（application/wasm で配信）
 ```
 
@@ -124,6 +132,31 @@ make monitor
 - 読み込みに1枚1秒前後かかるので、切り替え効果は上から下・ブラインド・瞬時の3種類（左から右は遅いので使わない）。
 - FAT を読む tinyfs/fatfs は C コードで `malloc` を使う。ESP32-S3 のターゲットは `malloc` を Wi-Fi ドライバ用に
   差し替える設定（`--wrap=malloc`）なので、`internal/espmalloc` で TinyGo の `malloc` に戻している。
+
+## ESP32-3248S035C（3.5インチ）
+
+Sunton ESP32-3248S035C：ESP32（PSRAM なし）、3.5インチ 320×480 の ST7796（SPI）、GT911 静電容量タッチ（I2C）。横向き 480×320 で使う。
+
+```sh
+make flash-s035 PKG=./examples/s035_check   # まずこれで液晶とタッチを確認
+make flash-s035 PKG=./cmd/games             # ゲーム
+make examples-s035                          # この基板で動く全プログラムのビルド確認
+```
+
+- RAM が足りないのでフレームバッファは持たず、描画はその都度 SPI で液晶に送る（`st7796`）。
+- 480×272 用に作ったプログラム（03、07〜12、cmd/app、cmd/games）は、`platform.Init()` が返す**画面中央の 480×272 の窓**で動く（上下 24px は黒）。タッチも窓の座標に直す。
+- 01・02・04・05・06 は S043 専用（RGB 液晶、PWM、SD とタッチの共有バスを使う）。
+- バックライトは点灯・消灯のみ（TinyGo に ESP32 の PWM がないため）。
+
+**s035_check で確かめること**（シリアル 115200bps でコマンドを送れる）
+
+| 確認 | 期待 | 違ったら |
+|---|---|---|
+| ログの `gt911: address ... product 911` | タッチ IC が見つかる | 配線・ピン（board/s035）を確認 |
+| 色の帯 | 左から赤・緑・青・シアン・マゼンタ・黄・白・黒 | `o`（赤青の入れ替え）、`i`（反転）で直る方を board/s035 の `MADCTL`・`Invert` に書く |
+| 向き | 「TOP LEFT」が左上で読める | `r`（180度回転）。直ったら `MADCTL = 0xE8` にし、`k` でタッチを測り直す |
+| タッチ | 黄色い点が指の位置に出る | `k`（4隅のタップ）で測り、ログの値を board/s035 の `TouchRaw*` に書く |
+| 速さ | `f`・`t` の時間がログに出る | 参考値（全画面塗りつぶしの時間など） |
 
 ## ブラウザ（wasm）で動かす
 
