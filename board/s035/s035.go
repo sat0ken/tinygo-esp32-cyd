@@ -53,18 +53,23 @@ const (
 const SPIFrequency = 40_000_000
 
 // MADCTL is the ST7796 memory access control value: row/column exchange
-// for landscape (MV, 0x20) and BGR colour order (0x08). 0xE8 (MY|MX|MV|BGR)
+// for landscape (MV, 0x20) and BGR colour order (0x08). Checked on the
+// board (2026-10-18, examples/s035_check): colours right, "TOP LEFT" at the
+// top left with the USB connector on the right. 0xE8 (MY|MX|MV|BGR)
 // turns the picture by 180 degrees; then the touch calibration below must
 // be measured again (examples/s035_check).
 const MADCTL = 0x28
 
-// Invert turns on the display inversion (INVON). LovyanGFX: invert = false.
+// Invert turns on the display inversion (INVON). LovyanGFX: invert = false
+// (checked on the board).
 const Invert = false
 
 // GT911 capacitive touch controller on I2C0. INT is GPIO21 according to
 // rzeldent and GPIO36 according to lang-ship; it is not used (the driver
 // polls), and neither is RST (GPIO25), so the controller keeps the I2C
 // address it chose at power-on (0x5D or 0x14; both are tried).
+// On the board (2026-10-18): address 0x5D, product "911", firmware 0x1060,
+// resolution 320x480, config version 0x69.
 const (
 	PinTouchSDA = 33
 	PinTouchSCL = 32

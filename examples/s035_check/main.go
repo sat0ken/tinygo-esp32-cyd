@@ -18,11 +18,13 @@
 //	k  calibrate the touch panel: touch the four targets
 //	f  speed: fill the screen 10 times
 //	t  speed: draw 300 characters
+//	d  read the panel ID over MISO (GPIO12), without and with USR_MISO
 //
 // Flash: make flash TARGET=./targets/esp32-3248s035c.json PKG=./examples/s035_check
 package main
 
 import (
+	"device/esp"
 	"image/color"
 	"machine"
 	"strconv"
@@ -89,7 +91,7 @@ func main() {
 
 func help() {
 	println("commands: r = turn 180, o = swap red/blue, i = inversion, c = redraw,")
-	println("          k = calibrate touch, f = fill speed, t = text speed")
+	println("          k = calibrate touch, f = fill speed, t = text speed, d = read panel ID")
 }
 
 func command(d *st7796.Device, t *gt911.Touch, b byte) {
@@ -133,6 +135,8 @@ func command(d *st7796.Device, t *gt911.Touch, b byte) {
 		println("300 characters (freesans bold 9pt):", time.Since(start).Milliseconds(), "ms")
 		time.Sleep(2 * time.Second)
 		drawTest(d)
+	case 'd':
+		readID(d)
 	case '\r', '\n':
 	default:
 		help()
@@ -169,6 +173,41 @@ func drawTest(d *st7796.Device) {
 	d.FillRectangle(w/2-90, h-60, 180, 22, black)
 	tinyfont.WriteLine(d, &proggy.TinySZ8pt7b, w/2-84, h-45, label, white)
 	d.Display()
+}
+
+// readID reads the panel ID at 10MHz. TinyGo's ESP32 SPI driver enables
+// full duplex (DOUTDIN) and the write phase (USR_MOSI) but not the read
+// phase (USR_MISO), which ESP-IDF also sets for full duplex; the second
+// try sets it to see whether the bytes then come in.
+func readID(d *st7796.Device) {
+	spi := machine.SPI2
+	cfg := machine.SPIConfig{
+		SCK: machine.Pin(s035.PinSCK), SDO: machine.Pin(s035.PinMOSI), SDI: machine.Pin(s035.PinMISO),
+		Frequency: 10_000_000,
+	}
+	spi.Configure(cfg)
+	for _, miso := range []bool{false, true} {
+		if miso {
+			esp.SPI2.USER.SetBits(esp.SPI_USER_USR_MISO)
+		}
+		a := d.Read(st7796.RDDID, 4)
+		b := d.Read(st7796.RDID4, 4)
+		println("USR_MISO", miso, " RDDID(04)", hexBytes(a[:]), " RDID4(d3)", hexBytes(b[:]))
+	}
+	cfg.Frequency = s035.SPIFrequency
+	spi.Configure(cfg) // also clears USR_MISO again
+	println("(ST7796: RDDID 7796xx / RDID4 007796, maybe shifted by a dummy bit)")
+}
+
+func hexBytes(b []byte) string {
+	s := ""
+	for i, v := range b {
+		if i > 0 {
+			s += " "
+		}
+		s += hexByte(v)[2:]
+	}
+	return s
 }
 
 // ---- touch calibration ----
