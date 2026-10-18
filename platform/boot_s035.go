@@ -3,10 +3,18 @@
 package platform
 
 import (
+	"device/esp"
 	"runtime/volatile"
 	"unsafe"
 )
 
+// Boot diagnostics of the ESP32-3248S035C, printed before main runs:
+//
+//   - the reset reason, and the exception TinyGo's kernel exception
+//     handler (targets/esp32-interrupts.S) saved before it reset the chip:
+//     RTC STORE0 = 0x5556xxxx (xxxx = EXCCAUSE), STORE1 = EPC1;
+//   - the flash MMU entries of the program code (below).
+//
 // Check of the flash MMU entries of the program code (IROM).
 //
 // cmd/games did not reach main on the board, while every smaller program
@@ -75,7 +83,28 @@ func mmuEntry(i uint32) *uint32 {
 // touch anything that could need the cache).
 var iromWant [maxIROM]uint32
 
+// Reset reasons (RTC_CNTL RESET_STATE, PRO CPU), from ESP-IDF
+// esp32/rom/rtc.h.
+var resetReasons = [...]string{
+	1: "power on", 3: "software (system)", 4: "legacy watchdog", 5: "deep sleep",
+	6: "SDIO", 7: "timer group 0 watchdog", 8: "timer group 1 watchdog",
+	9: "RTC watchdog", 10: "intrusion", 11: "timer group watchdog (CPU)",
+	12: "software (CPU)", 13: "RTC watchdog (CPU)", 14: "APP CPU",
+	15: "brownout", 16: "RTC watchdog (RTC)",
+}
+
 func init() {
+	reason := esp.RTC_CNTL.RESET_STATE.Get() & esp.RTC_CNTL_RESET_STATE_RESET_CAUSE_PROCPU_Msk
+	name := "?"
+	if int(reason) < len(resetReasons) && resetReasons[reason] != "" {
+		name = resetReasons[reason]
+	}
+	println("boot: reset reason", reason, name)
+	if s0 := esp.RTC_CNTL.STORE0.Get(); s0&0xFFFF0000 == 0x55560000 {
+		println("boot: last run ended with exception cause", s0&0xFFFF, "at PC", esp.RTC_CNTL.STORE1.Get())
+		esp.RTC_CNTL.STORE0.Set(0)
+	}
+
 	dromPages := pages(unsafe.Pointer(&rodataStart), unsafe.Pointer(&rodataEnd))
 	iromPages := pages(unsafe.Pointer(&textStart), unsafe.Pointer(&textEnd))
 	if iromPages > maxIROM {
