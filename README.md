@@ -135,7 +135,7 @@ make monitor
 
 ## ESP32-3248S035C（3.5インチ）
 
-Sunton ESP32-3248S035C：ESP32（PSRAM なし）、3.5インチ 320×480 の ST7796（SPI）、GT911 静電容量タッチ（I2C）。横向き 480×320 で使う。
+Sunton ESP32-3248S035C：ESP32（ESP-32S モジュール。中身は ESP32-S3 ではなく初代 ESP32、PSRAM なし）、3.5インチ 320×480 の ST7796（SPI）、GT911 静電容量タッチ（I2C）。横向き 480×320 で使う。
 
 ```sh
 make flash-s035 PKG=./examples/s035_check   # まずこれで液晶とタッチを確認

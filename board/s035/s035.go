@@ -2,6 +2,13 @@
 // ESP32-3248S035C (ESP32, 3.5" 320x480 ST7796 SPI TFT, GT911 capacitive
 // touch). Package board is the ESP32-4827S043.
 //
+// The CPU is an ESP-32S module: the original ESP32 chip (not the ESP32-S2
+// or S3) with 4MB flash and no PSRAM, so the TinyGo target inherits
+// esp32-generic. On the V1.4 board the footprint of the extra flash chip
+// (U4) is empty. Connectors on the back: P1 (VIN, TX, RX, GND), P3 (GND,
+// IO35, IO22, IO21), CN1 (GND, IO22, IO21, 3.3V), P4 speaker, and TP-C
+// for the touch panel (GND, SDA, SCL, RST, INT, VDD).
+//
 // The panel is used in landscape, 480x320. The ESP32 has no PSRAM and too
 // little RAM for a frame buffer, so drawing goes straight to the panel over
 // SPI (package st7796).
