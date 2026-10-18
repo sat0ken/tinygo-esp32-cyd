@@ -27,9 +27,11 @@ var (
 )
 
 // InitScreen initialises the SPI bus and the ST7796 (480x320, landscape),
-// clears the screen and turns the backlight on. It reads the panel ID at a
-// slow SPI clock first and prints it (only for the log: not every panel
-// answers).
+// clears the screen and turns the backlight on.
+//
+// The panel cannot be read back: on the board every read (RDDID, RDID4)
+// returns zeros, also with the SPI read phase (USR_MISO) enabled, so MISO
+// (GPIO12) does not seem to reach the panel. examples/s035_check "d" tries.
 func InitScreen() (*st7796.Device, error) {
 	if screen != nil {
 		return screen, nil
@@ -37,7 +39,7 @@ func InitScreen() (*st7796.Device, error) {
 	spi := machine.SPI2
 	cfg := machine.SPIConfig{
 		SCK: machine.Pin(s035.PinSCK), SDO: machine.Pin(s035.PinMOSI), SDI: machine.Pin(s035.PinMISO),
-		Frequency: 10_000_000,
+		Frequency: s035.SPIFrequency,
 	}
 	if err := spi.Configure(cfg); err != nil {
 		return nil, err
@@ -50,13 +52,6 @@ func InitScreen() (*st7796.Device, error) {
 
 	d := st7796.New(spi, dc, cs)
 	d.Configure(st7796.Config{Width: s035.Width, Height: s035.Height, MADCTL: s035.MADCTL, Invert: s035.Invert})
-	id := d.Read(st7796.RDID4, 4)
-	println("st7796: RDID4", hex(id[:]), "(expected 00 77 96 after a dummy byte or bit)")
-
-	cfg.Frequency = s035.SPIFrequency
-	if err := spi.Configure(cfg); err != nil {
-		return nil, err
-	}
 	d.FillRectangle(0, 0, s035.Width, s035.Height, color.RGBA{0, 0, 0, 255})
 	screen = d
 	SetBacklight(100)

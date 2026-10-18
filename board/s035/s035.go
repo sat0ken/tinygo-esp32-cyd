@@ -81,15 +81,23 @@ const (
 // Touch calibration: raw GT911 readings at the left/right and top/bottom
 // edges of the landscape screen (see touchcal.Calibration).
 //
-// The GT911 reports portrait coordinates; with MADCTL 0x28 its Y is the
-// screen X and its X runs from the bottom to the top. The values come
-// from the LovyanGFX setting of the C version (x 14..310, y 5..448 in
-// portrait). Measure them on the board with examples/s035_check.
+// The GT911 reports portrait coordinates in its own resolution, 320x480,
+// which is the panel's: with MADCTL 0x28 its Y is the screen X and its X
+// runs from the bottom (0) to the top (319), so no scaling is needed.
+//
+// Measured on the board (2026-10-18, examples/s035_check): touching the
+// corners gave raw X 2..316 and raw Y 8..475, and the calibration targets
+// 20 pixels from the edges matched within 3 pixels, except the two at the
+// bottom, which read 12..19 pixels low (raw X 1 and 8 instead of 20). The
+// 4-corner fit (0, 480, 319, -17) would make the bottom 16 pixels of the
+// screen unreachable, so the GT911's own coordinates are used. (The
+// LovyanGFX values for this board, x 14..310 / y 5..448, are 30 pixels off
+// at the right edge on this one.)
 const (
-	TouchRawXLeft   = 5
-	TouchRawXRight  = 448
-	TouchRawYTop    = 310
-	TouchRawYBottom = 14
+	TouchRawXLeft   = 0
+	TouchRawXRight  = 479
+	TouchRawYTop    = 319
+	TouchRawYBottom = 0
 	TouchSwapXY     = true
 )
 
