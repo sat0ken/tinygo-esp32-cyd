@@ -6,10 +6,5 @@
 		"esp32_3248s035c"
 	],
 	"serial": "uart",
-	"flash-method": "esp32flash",
-	"ldflags": [
-		"--defsym=Cache_Read_Disable=0x40009ab8",
-		"--defsym=Cache_Read_Enable=0x40009a84",
-		"--defsym=Cache_Flush=0x40009a14"
-	]
+	"flash-method": "esp32flash"
 }

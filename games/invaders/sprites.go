@@ -24,10 +24,38 @@ func (s sprite) on(x, y int16) bool { return s.bits[int(y)*int(s.w)+int(x)] }
 func (s sprite) pw() int16 { return s.w * scale }
 func (s sprite) ph() int16 { return s.h * scale }
 
+// The sprites are parsed by parseSprites when the first game is created,
+// not by package initializers: TinyGo cannot run parseSprite at compile
+// time, and a package initializer left for run time made TinyGo also leave
+// the initializer of machine's UART0 for run time. On the ESP32 the runtime
+// sets up the UART before any package initializer runs, so the board hung
+// at boot as soon as this package was linked (cmd/games on the
+// ESP32-3248S035C).
+var (
+	invaderSprites                           [3][2]sprite
+	cannonSprite, explosionSprite, ufoSprite sprite
+	spritesParsed                            bool
+)
+
+func parseSprites() {
+	if spritesParsed {
+		return
+	}
+	for k := range invaderArt {
+		for f := range invaderArt[k] {
+			invaderSprites[k][f] = parseSprite(invaderArt[k][f]...)
+		}
+	}
+	cannonSprite = parseSprite(cannonArt...)
+	explosionSprite = parseSprite(explosionArt...)
+	ufoSprite = parseSprite(ufoArt...)
+	spritesParsed = true
+}
+
 // The three invaders, two animation frames each.
-var invaderSprites = [3][2]sprite{
+var invaderArt = [3][2][]string{
 	{ // squid, top row, 30 points
-		parseSprite(
+		{
 			"...##...",
 			"..####..",
 			".######.",
@@ -36,8 +64,8 @@ var invaderSprites = [3][2]sprite{
 			"..#..#..",
 			".#.##.#.",
 			"#.#..#.#",
-		),
-		parseSprite(
+		},
+		{
 			"...##...",
 			"..####..",
 			".######.",
@@ -46,10 +74,10 @@ var invaderSprites = [3][2]sprite{
 			".#.##.#.",
 			"#......#",
 			".#....#.",
-		),
+		},
 	},
 	{ // crab, 20 points
-		parseSprite(
+		{
 			"..#.....#..",
 			"...#...#...",
 			"..#######..",
@@ -58,8 +86,8 @@ var invaderSprites = [3][2]sprite{
 			"#.#######.#",
 			"#.#.....#.#",
 			"...##.##...",
-		),
-		parseSprite(
+		},
+		{
 			"..#.....#..",
 			"#..#...#..#",
 			"#.#######.#",
@@ -68,10 +96,10 @@ var invaderSprites = [3][2]sprite{
 			".#########.",
 			"..#.....#..",
 			".#.......#.",
-		),
+		},
 	},
 	{ // octopus, 10 points
-		parseSprite(
+		{
 			"....####....",
 			".##########.",
 			"############",
@@ -80,8 +108,8 @@ var invaderSprites = [3][2]sprite{
 			"...##..##...",
 			"..##.##.##..",
 			"##........##",
-		),
-		parseSprite(
+		},
+		{
 			"....####....",
 			".##########.",
 			"############",
@@ -90,11 +118,11 @@ var invaderSprites = [3][2]sprite{
 			"..###..###..",
 			".##..##..##.",
 			"..##....##..",
-		),
+		},
 	},
 }
 
-var cannonSprite = parseSprite(
+var cannonArt = []string{
 	"......#......",
 	".....###.....",
 	".....###.....",
@@ -103,9 +131,9 @@ var cannonSprite = parseSprite(
 	"#############",
 	"#############",
 	"#############",
-)
+}
 
-var explosionSprite = parseSprite(
+var explosionArt = []string{
 	"....#...#....",
 	".#...#.#...#.",
 	"..#.......#..",
@@ -114,9 +142,9 @@ var explosionSprite = parseSprite(
 	"...#.....#...",
 	"..#.#...#.#..",
 	".#...#.#...#.",
-)
+}
 
-var ufoSprite = parseSprite(
+var ufoArt = []string{
 	".....######.....",
 	"...##########...",
 	"..############..",
@@ -124,7 +152,7 @@ var ufoSprite = parseSprite(
 	"################",
 	"..###..##..###..",
 	"...#........#...",
-)
+}
 
 // Bunker shape in cells (each cell is 4x4 pixels).
 var bunkerShape = []string{

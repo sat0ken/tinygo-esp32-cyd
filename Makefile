@@ -66,25 +66,23 @@ examples:
 
 # make flash-s035 PKG=./examples/s035_check
 # make flash-s035 PKG=./cmd/games PORT=/dev/ttyUSB0
-#
-# Not `tinygo flash`: TinyGo's image header asks for 80MHz flash. The ROM
-# boots with a 40MHz APB clock, so the flash runs at 40MHz while it loads
-# the program, but the TinyGo runtime then switches the APB clock to 80MHz
-# and the flash to 80MHz, without the extra dummy cycle that ESP-IDF sets
-# for 80MHz (bootloader_flash_dummy_config). cmd/games stopped right after
-# that switch. -ff 40m writes 40MHz in the header (20MHz while the ROM
-# loads, 40MHz afterwards). The ESP32 image goes at 0x1000.
 flash-s035:
-	@mkdir -p out
-	tinygo build -target=$(S035) -o out/s035.bin $(PKG)
-	go run tinygo.org/x/espflasher@v0.8.1 -port $(or $(PORT),/dev/ttyUSB0) -chip esp32 -baud 230400 -ff 40m -fs 4MB -offset 0x1000 out/s035.bin
-	tinygo monitor $(PORTFLAG) -baudrate 115200
+	tinygo flash -target=$(S035) $(PORTFLAG) -monitor $(PKG)
 
 # Build every program that runs on the ESP32-3248S035C (compile check).
+#
+# It also checks that machine._UART0 is initialised at compile time (in
+# .data, "d"): if a package initializer is left for run time, TinyGo may
+# leave UART0's for run time too, and the ESP32 then hangs at boot because
+# the runtime uses the UART before running package initializers (see
+# docs/ARCHITECTURE.md, chapter 15).
 examples-s035:
+	@mkdir -p out
 	@for p in $(S035_PKGS); do \
 		echo "== $$p"; \
-		tinygo build -target=$(S035) -size short -o /dev/null $$p || exit 1; \
+		tinygo build -target=$(S035) -size short -o out/s035-check.elf $$p || exit 1; \
+		go tool nm out/s035-check.elf | grep -q ' d machine._UART0$$' || \
+			{ echo "$$p: machine._UART0 is not initialised at compile time: it would hang at boot"; exit 1; }; \
 	done
 
 ## Browser ----------------------------------------------------------------

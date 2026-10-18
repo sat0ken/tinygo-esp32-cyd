@@ -168,6 +168,7 @@ type Game struct {
 
 // NewGame creates a game. seed makes the invaders' shots repeatable.
 func NewGame(d hal.Display, t hal.Touch, seed uint32) *Game {
+	parseSprites()
 	bd, _ := d.(bitmapDrawer)
 	w, h := d.Size()
 	if seed == 0 {

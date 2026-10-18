@@ -3,9 +3,8 @@
 //
 // A tinyfont.Font is a variable holding slices: TinyGo cannot know that
 // nothing writes to it, so the glyph table and every bitmap end up in
-// .data, which the ROM bootloader copies to RAM. The five fonts of
-// cmd/games took 28KB of .data, which the ESP32 ROM bootloader could not
-// load (it stopped while loading a 28.1KB .data segment; 27.6KB worked).
+// .data, i.e. in RAM. The five fonts of cmd/games took 28KB of RAM, a lot
+// on the ESP32 (192KB for everything); with romfont they stay in flash.
 //
 // The subpackages freesans and proggy have the fonts this repository uses,
 // with the same names as in tinyfont, generated from tinyfont by

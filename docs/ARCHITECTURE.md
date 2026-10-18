@@ -722,13 +722,25 @@ ESP32（無印、PSRAM なし）、ST7796（320×480、SPI）、GT911（静電�
 - 実測では、端から 20px の目標のうち下の2つだけ 12〜19px 下にずれて読めた。4隅から求めた補正値を使うと画面の下 16px に触れなくなるので、GT911 の座標をそのまま使っている（[board/s035](../board/s035/s035.go) のコメント）。
 - **TinyGo の I2C の不具合への対処**：ESP32 の I2C ドライバはピンの出力を `GPIO.ENABLE_W1TS.Set(1 << pin)` で有効にするが、32 番以上のピンは ENABLE1 側にあるので 0 になり、SCL（32）・SDA（33）が駆動されない。[platform_s035.go](../platform/platform_s035.go) の `enableHighPins` で ENABLE1 のビットを立てている。
 
+### 起動時に止まった原因：UART0 の初期化が後回しになる（TinyGo の不具合）
+
+- **症状**：cmd/games を書き込むと、何も表示されず、ログも出ない。ROM の表示（`entry 0x40080058`）のあと、ランタイムが UART を設定し直すところ（`machine.InitSerial`）で止まっていた。
+- **原因**：
+  - TinyGo はパッケージの初期化（大域変数の初期値など）をコンパイル時に実行して、結果を `.data` に入れる（interp）。実行できなかった初期化は、起動時に `runtime.initAll` で実行する。
+  - games/invaders のスプライト（`parseSprite` で文字列から組み立てる）はコンパイル時に実行できず、起動時に回っていた。
+  - その結果、invaders より後に初期化される `machine` の `_UART0`（UART0 のレジスタを指す構造体）まで起動時に回され、`.bss`（ゼロ）に置かれた。
+  - ESP32 のランタイム（`runtime_esp32.go` の `main`）は、パッケージの初期化より**前**に `machine.InitSerial()` を呼ぶ。このため、空の `_UART0`（レジスタのポインタが nil）を使って止まる。例外の表示も出ない。
+- **見分け方**：`go tool nm <elf> | grep machine._UART0` が `d`（.data）なら正常、`b`（.bss）なら起動時に止まる。`make examples-s035` が全プログラムでこれを確かめる。
+- **対策**：ライブラリのパッケージに、起動時に組み立てる大域変数を置かない。invaders のスプライトは文字列のまま持ち、最初の `NewGame` で組み立てる（[sprites.go](../games/invaders/sprites.go)）。main パッケージの初期化は最後に実行されるので影響しない。
+- **調べ方**：TinyGo の `src/runtime/runtime_esp32.go` の写しを作り、`runtime.main` の各段階で UART0 の FIFO に1文字ずつ書いて（`TINYGOROOT` を写しに向けてビルド）、どこまで進むかを見た。クロックを上げてから UART を設定し直すまでは 230400bps で出力される（APB が 80MHz になり、分周比は ROM の 40MHz 用のまま）ので、モニタを 230400bps にすると読める。
+- 途中で疑った「`.data` の大きさ」「フラッシュ 80MHz の読み出し」「コードの2ページ目の MMU」は、どれも原因ではなかった（2ページ目の割り当ては正しいことを実機で確認）。
+
 ### フォントはフラッシュに置く（romfont）
 
-- tinyfont のフォント（`freesans.Bold9pt7b` など）はスライスを持つ変数なので、TinyGo は書き換えられる可能性があると見て、字形の表もビットマップも `.data`（RAM の初期値。起動時に ROM がフラッシュから RAM へコピーする）に置く。cmd/games では5書体で 28KB あった。
-- **ESP32 の ROM はこの `.data` を読み込めなかった**：ROM の表示が `load:0x3ffb...` の途中で化けたまま止まり、`entry` 行もプログラムの最初の表示も出ない。`.data` が 27.6KB の 09_sudoku は動き、28.1KB の cmd/games は動かなかった（境目は 28KB 付近。理由は未確認）。
+- tinyfont のフォント（`freesans.Bold9pt7b` など）はスライスを持つ変数なので、TinyGo は書き換えられる可能性があると見て、字形の表もビットマップも `.data`（RAM）に置く。cmd/games では5書体で 28KB あった。ESP32 の DRAM は全部で 192KB しかない。
 - [romfont](../romfont/romfont.go) は字形を2本の文字列（索引とデータ）に入れる。文字列の中身は rodata（フラッシュ）に置かれるので、`.data` は cmd/games で 960 バイトになった（S043 でも RAM が 28KB 空く）。描画は tinyfont と1ピクセルも違わないことを全書体・全文字で確かめている（[romfont_test.go](../romfont/romfont_test.go)）。ゴールデン画像も変わらない。
 - 使い方は import を `tinygo.org/x/tinyfont/freesans` から `github.com/sat0ken/tinygo-cyd/romfont/freesans` に変えるだけ（名前は同じ）。新しい書体が要るときは [tools/fontgen](../tools/fontgen/main.go) の一覧に足して `go generate ./romfont`。
-- [irom_s035.go](../platform/irom_s035.go)：原因を探す途中で入れた、コード（IROM）の MMU の割り当てを起動時に確かめるコード。2ページ目の割り当ても正しいことを実機で確かめたら外す。
+- [boot_s035.go](../platform/boot_s035.go)：前回の実行が例外で再起動していたら、起動時にその原因と番地を表示する（TinyGo の例外ハンドラが RTC のレジスタに残す）。電源投入以外のリセットなら、その理由も表示する。
 
 ### 実機で確かめること（s035_check）
 
