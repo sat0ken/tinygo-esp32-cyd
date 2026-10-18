@@ -66,8 +66,19 @@ examples:
 
 # make flash-s035 PKG=./examples/s035_check
 # make flash-s035 PKG=./cmd/games PORT=/dev/ttyUSB0
+#
+# Not `tinygo flash`: TinyGo's image header asks for 80MHz flash. The ROM
+# boots with a 40MHz APB clock, so the flash runs at 40MHz while it loads
+# the program, but the TinyGo runtime then switches the APB clock to 80MHz
+# and the flash to 80MHz, without the extra dummy cycle that ESP-IDF sets
+# for 80MHz (bootloader_flash_dummy_config). cmd/games stopped right after
+# that switch. -ff 40m writes 40MHz in the header (20MHz while the ROM
+# loads, 40MHz afterwards). The ESP32 image goes at 0x1000.
 flash-s035:
-	tinygo flash -target=$(S035) $(PORTFLAG) -monitor $(PKG)
+	@mkdir -p out
+	tinygo build -target=$(S035) -o out/s035.bin $(PKG)
+	go run tinygo.org/x/espflasher@v0.8.1 -port $(or $(PORT),/dev/ttyUSB0) -chip esp32 -baud 230400 -ff 40m -fs 4MB -offset 0x1000 out/s035.bin
+	tinygo monitor $(PORTFLAG) -baudrate 115200
 
 # Build every program that runs on the ESP32-3248S035C (compile check).
 examples-s035:
