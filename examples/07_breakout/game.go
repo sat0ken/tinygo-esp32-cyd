@@ -6,8 +6,8 @@ import (
 	"strconv"
 
 	"github.com/sat0ken/tinygo-cyd/hal"
+	"github.com/sat0ken/tinygo-cyd/romfont/proggy"
 	"tinygo.org/x/tinyfont"
-	"tinygo.org/x/tinyfont/proggy"
 )
 
 // Layout (480x272).

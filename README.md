@@ -26,6 +26,7 @@ board/s035/   ESP32-3248S035C のピン番号・設定値
 st7796/       ST7796 SPI 液晶ドライバ（フレームバッファなし、ESP32-3248S035C）
 gt911/        GT911 静電容量タッチ（I2C）→ 画面座標（hal.Touch）
 viewport/     大きい画面の中の小さい窓（480×320 の中で 480×272 のゲームを動かす）
+romfont/      フラッシュに置くフォント（tinyfont の freesans・proggy を tools/fontgen で変換。描画は同じ）
 wasmlcd/      ブラウザ用バックエンド（canvas + pointer イベント）
 memlcd/       メモリ上バックエンド（テスト用、PNG 出力）
 platform/     ビルドタグで実機 / wasm / ホストを切り替える初期化

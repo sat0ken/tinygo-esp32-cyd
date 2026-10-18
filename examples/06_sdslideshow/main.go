@@ -26,10 +26,10 @@ import (
 	"github.com/sat0ken/tinygo-cyd/hal"
 	_ "github.com/sat0ken/tinygo-cyd/internal/espmalloc" // malloc for fatfs (C)
 	"github.com/sat0ken/tinygo-cyd/platform"
+	"github.com/sat0ken/tinygo-cyd/romfont/proggy"
 	"github.com/sat0ken/tinygo-cyd/slideshow"
 	"tinygo.org/x/drivers/sdcard"
 	"tinygo.org/x/tinyfont"
-	"tinygo.org/x/tinyfont/proggy"
 	"tinygo.org/x/tinyfs/fatfs"
 )
 

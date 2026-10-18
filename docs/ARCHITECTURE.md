@@ -64,6 +64,7 @@ ESP32-4827S043（ESP32-S3 + 4.3インチ 480×272 RGB 液晶）を TinyGo で動
 | [platform/](../platform/) | ビルド先に応じて上の3つを選んで初期化 | 全部 |
 | [xpttouch/](../xpttouch/) | XPT2046 タッチの読み取り | 実機 |
 | [touchcal/](../touchcal/calib.go) | タッチの raw 値 → 画面座標、4隅からのキャリブレーション | 全部 |
+| [romfont/](../romfont/romfont.go) | フォントを文字列にしてフラッシュに置く（tinyfont と同じ描画）。`go generate ./romfont` で [tools/fontgen](../tools/fontgen/main.go) が作る | 全部 |
 | [board/s035/](../board/s035/s035.go)・[st7796/](../st7796/st7796.go)・[gt911/](../gt911/gt911.go)・[viewport/](../viewport/viewport.go) | ESP32-3248S035C 用（[15章](#15-esp32-3248s035c35インチspi-液晶)） | 実機（ドライバはホストでもテスト） |
 | [flashmap/](../flashmap/flashmap.go) | フラッシュの任意の領域を MMU でメモリとして読めるようにする | 実機 |
 | [slidepack/](../slidepack/slidepack.go) | 複数の全画面画像を1ファイルにまとめる形式 | 全部 |
@@ -720,6 +721,14 @@ ESP32（無印、PSRAM なし）、ST7796（320×480、SPI）、GT911（静電�
 - GT911 の座標は縦向きで、解像度は液晶と同じ 320×480。横向き（MADCTL 0x28）では GT911 の Y が画面の X、GT911 の X が画面の下→上になる。変換は [touchcal](../touchcal/calib.go)（`SwapXY` と左右・上下の raw 値）で、拡大縮小はしない（raw 0〜479 / 319〜0）。
 - 実測では、端から 20px の目標のうち下の2つだけ 12〜19px 下にずれて読めた。4隅から求めた補正値を使うと画面の下 16px に触れなくなるので、GT911 の座標をそのまま使っている（[board/s035](../board/s035/s035.go) のコメント）。
 - **TinyGo の I2C の不具合への対処**：ESP32 の I2C ドライバはピンの出力を `GPIO.ENABLE_W1TS.Set(1 << pin)` で有効にするが、32 番以上のピンは ENABLE1 側にあるので 0 になり、SCL（32）・SDA（33）が駆動されない。[platform_s035.go](../platform/platform_s035.go) の `enableHighPins` で ENABLE1 のビットを立てている。
+
+### フォントはフラッシュに置く（romfont）
+
+- tinyfont のフォント（`freesans.Bold9pt7b` など）はスライスを持つ変数なので、TinyGo は書き換えられる可能性があると見て、字形の表もビットマップも `.data`（RAM の初期値。起動時に ROM がフラッシュから RAM へコピーする）に置く。cmd/games では5書体で 28KB あった。
+- **ESP32 の ROM はこの `.data` を読み込めなかった**：ROM の表示が `load:0x3ffb...` の途中で化けたまま止まり、`entry` 行もプログラムの最初の表示も出ない。`.data` が 27.6KB の 09_sudoku は動き、28.1KB の cmd/games は動かなかった（境目は 28KB 付近。理由は未確認）。
+- [romfont](../romfont/romfont.go) は字形を2本の文字列（索引とデータ）に入れる。文字列の中身は rodata（フラッシュ）に置かれるので、`.data` は cmd/games で 960 バイトになった（S043 でも RAM が 28KB 空く）。描画は tinyfont と1ピクセルも違わないことを全書体・全文字で確かめている（[romfont_test.go](../romfont/romfont_test.go)）。ゴールデン画像も変わらない。
+- 使い方は import を `tinygo.org/x/tinyfont/freesans` から `github.com/sat0ken/tinygo-cyd/romfont/freesans` に変えるだけ（名前は同じ）。新しい書体が要るときは [tools/fontgen](../tools/fontgen/main.go) の一覧に足して `go generate ./romfont`。
+- [irom_s035.go](../platform/irom_s035.go)：原因を探す途中で入れた、コード（IROM）の MMU の割り当てを起動時に確かめるコード。2ページ目の割り当ても正しいことを実機で確かめたら外す。
 
 ### 実機で確かめること（s035_check）
 

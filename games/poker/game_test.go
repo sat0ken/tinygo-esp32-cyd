@@ -7,9 +7,9 @@ import (
 	"github.com/sat0ken/tinygo-cyd/games/cards"
 	"github.com/sat0ken/tinygo-cyd/internal/goldentest"
 	"github.com/sat0ken/tinygo-cyd/memlcd"
+	"github.com/sat0ken/tinygo-cyd/romfont/freesans"
+	"github.com/sat0ken/tinygo-cyd/romfont/proggy"
 	"tinygo.org/x/tinyfont"
-	"tinygo.org/x/tinyfont/freesans"
-	"tinygo.org/x/tinyfont/proggy"
 )
 
 const dt = float32(1.0 / 60)

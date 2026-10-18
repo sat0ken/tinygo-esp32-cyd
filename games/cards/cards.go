@@ -7,9 +7,9 @@ import (
 	"image/color"
 
 	"github.com/sat0ken/tinygo-cyd/hal"
+	"github.com/sat0ken/tinygo-cyd/romfont/freesans"
+	"github.com/sat0ken/tinygo-cyd/romfont/proggy"
 	"tinygo.org/x/tinyfont"
-	"tinygo.org/x/tinyfont/freesans"
-	"tinygo.org/x/tinyfont/proggy"
 )
 
 // Suit of a card. Spades and clubs are black, hearts and diamonds red.

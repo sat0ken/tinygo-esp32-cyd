@@ -11,10 +11,10 @@ import (
 	"github.com/sat0ken/tinygo-cyd/games/solitaire"
 	"github.com/sat0ken/tinygo-cyd/games/sudoku"
 	"github.com/sat0ken/tinygo-cyd/hal"
+	"github.com/sat0ken/tinygo-cyd/romfont/freesans"
+	"github.com/sat0ken/tinygo-cyd/romfont/proggy"
 	"tinygo.org/x/tinydraw"
 	"tinygo.org/x/tinyfont"
-	"tinygo.org/x/tinyfont/freesans"
-	"tinygo.org/x/tinyfont/proggy"
 )
 
 // game is what the launcher needs from a game: one step per frame.

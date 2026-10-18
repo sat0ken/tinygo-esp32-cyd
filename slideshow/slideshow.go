@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/sat0ken/tinygo-cyd/hal"
+	"github.com/sat0ken/tinygo-cyd/romfont/proggy"
 	"tinygo.org/x/tinyfont"
-	"tinygo.org/x/tinyfont/proggy"
 )
 
 // bitmapDrawer is implemented by every backend (rgblcd, wasmlcd, memlcd via

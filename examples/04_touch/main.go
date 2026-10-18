@@ -26,10 +26,10 @@ import (
 	"github.com/sat0ken/tinygo-cyd/board"
 	"github.com/sat0ken/tinygo-cyd/platform"
 	"github.com/sat0ken/tinygo-cyd/rgblcd"
+	"github.com/sat0ken/tinygo-cyd/romfont/proggy"
 	"github.com/sat0ken/tinygo-cyd/xpttouch"
 	"tinygo.org/x/tinydraw"
 	"tinygo.org/x/tinyfont"
-	"tinygo.org/x/tinyfont/proggy"
 )
 
 // Targets are inset from the corners so they can be hit reliably.

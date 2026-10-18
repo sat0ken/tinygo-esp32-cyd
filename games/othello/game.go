@@ -10,10 +10,10 @@ import (
 	"time"
 
 	"github.com/sat0ken/tinygo-cyd/hal"
+	"github.com/sat0ken/tinygo-cyd/romfont/freesans"
+	"github.com/sat0ken/tinygo-cyd/romfont/proggy"
 	"tinygo.org/x/tinydraw"
 	"tinygo.org/x/tinyfont"
-	"tinygo.org/x/tinyfont/freesans"
-	"tinygo.org/x/tinyfont/proggy"
 )
 
 // Layout for 480x272: the board on the left, the status on the right.

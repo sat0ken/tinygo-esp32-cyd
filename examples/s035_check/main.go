@@ -33,12 +33,12 @@ import (
 	"github.com/sat0ken/tinygo-cyd/board/s035"
 	"github.com/sat0ken/tinygo-cyd/gt911"
 	"github.com/sat0ken/tinygo-cyd/platform"
+	"github.com/sat0ken/tinygo-cyd/romfont/freesans"
+	"github.com/sat0ken/tinygo-cyd/romfont/proggy"
 	"github.com/sat0ken/tinygo-cyd/st7796"
 	"github.com/sat0ken/tinygo-cyd/touchcal"
 	"tinygo.org/x/tinydraw"
 	"tinygo.org/x/tinyfont"
-	"tinygo.org/x/tinyfont/freesans"
-	"tinygo.org/x/tinyfont/proggy"
 )
 
 var (

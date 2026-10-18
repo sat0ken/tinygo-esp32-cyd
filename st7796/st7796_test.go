@@ -8,8 +8,8 @@ import (
 
 	"github.com/sat0ken/tinygo-cyd/framebuf"
 	"github.com/sat0ken/tinygo-cyd/memlcd"
+	"github.com/sat0ken/tinygo-cyd/romfont/freesans"
 	"tinygo.org/x/tinyfont"
-	"tinygo.org/x/tinyfont/freesans"
 )
 
 // panel simulates the ST7796 side of the bus: it decodes commands and
