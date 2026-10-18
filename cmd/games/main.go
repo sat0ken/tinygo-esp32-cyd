@@ -6,7 +6,8 @@
 // games/solitaire and games/poker; examples/08 to 12 run each of them
 // alone.
 //
-//	make flash-noerase PKG=./cmd/games && make monitor
+//	make flash-noerase PKG=./cmd/games && make monitor   # ESP32-4827S043
+//	make flash-s035 PKG=./cmd/games                      # ESP32-3248S035C
 //	make wasm PKG=./cmd/games && make serve
 package main
 
@@ -20,6 +21,7 @@ const frameTime = time.Second / 60
 
 func main() {
 	time.Sleep(500 * time.Millisecond)
+	println("games: init")
 	d, t, err := platform.Init()
 	if err != nil {
 		println("platform.Init:", err.Error())

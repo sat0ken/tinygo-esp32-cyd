@@ -27,7 +27,8 @@ var (
 )
 
 // InitScreen initialises the SPI bus and the ST7796 (480x320, landscape),
-// clears the screen and turns the backlight on.
+// clears the screen and turns the backlight on. The init commands are sent
+// at 10MHz (as in the first run on the board), drawing at SPIFrequency.
 //
 // The panel cannot be read back: on the board every read (RDDID, RDID4)
 // returns zeros, also with the SPI read phase (USR_MISO) enabled, so MISO
@@ -39,7 +40,7 @@ func InitScreen() (*st7796.Device, error) {
 	spi := machine.SPI2
 	cfg := machine.SPIConfig{
 		SCK: machine.Pin(s035.PinSCK), SDO: machine.Pin(s035.PinMOSI), SDI: machine.Pin(s035.PinMISO),
-		Frequency: s035.SPIFrequency,
+		Frequency: 10_000_000,
 	}
 	if err := spi.Configure(cfg); err != nil {
 		return nil, err
@@ -52,9 +53,14 @@ func InitScreen() (*st7796.Device, error) {
 
 	d := st7796.New(spi, dc, cs)
 	d.Configure(st7796.Config{Width: s035.Width, Height: s035.Height, MADCTL: s035.MADCTL, Invert: s035.Invert})
+	cfg.Frequency = s035.SPIFrequency
+	if err := spi.Configure(cfg); err != nil {
+		return nil, err
+	}
 	d.FillRectangle(0, 0, s035.Width, s035.Height, color.RGBA{0, 0, 0, 255})
 	screen = d
 	SetBacklight(100)
+	println("st7796: ready, 480x320, SPI", s035.SPIFrequency/1_000_000, "MHz")
 	return d, nil
 }
 
