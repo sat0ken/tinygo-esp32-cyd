@@ -20,6 +20,7 @@ import (
 const frameTime = time.Second / 60
 
 func main() {
+	println("games: main")
 	time.Sleep(500 * time.Millisecond)
 	println("games: init")
 	d, t, err := platform.Init()
