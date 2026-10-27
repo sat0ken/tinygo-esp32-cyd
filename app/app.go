@@ -1,7 +1,7 @@
 // Package app is the application. It depends only on the hal interfaces,
 // so the same code runs on the board, in the browser and in host tests.
 //
-// Screen (480x272):
+// Screen (480x272 and larger):
 //
 //	+--------------------------------------------------+
 //	| title bar                                        |
@@ -11,6 +11,16 @@
 //	|                   +------------------------------+
 //	|                   | palette ............ [CLEAR] |
 //	+-------------------+------------------------------+
+//
+// Smaller screens (320x240) leave out the demo:
+//
+//	+--------------------------------+
+//	| title bar                      |
+//	+--------------------------------+
+//	| paint area                     |
+//	+--------------------------------+
+//	| palette ............... [CLEAR]|
+//	+--------------------------------+
 package app
 
 import (
@@ -49,23 +59,56 @@ func (r Rect) Contains(x, y int16) bool {
 	return x >= r.X && x < r.X+r.W && y >= r.Y && y < r.Y+r.H
 }
 
-// Layout of the screen.
-var (
-	titleBar  = Rect{0, 0, 480, 32}
-	demoPanel = Rect{0, 32, 200, 240}
-	paintArea = Rect{204, 36, 272, 196}
-	clearBtn  = Rect{412, 238, 64, 30}
-	palette   = []color.RGBA{Black, Red, Green, Blue, Yellow, Magenta}
-)
+var palette = []color.RGBA{Black, Red, Green, Blue, Yellow, Magenta}
 
-func swatch(i int) Rect {
-	return Rect{204 + int16(i)*34, 238, 30, 30}
+// layout is where everything is on the screen.
+type layout struct {
+	title     Rect
+	titleText string
+	titleFont tinyfont.Fonter
+	titleBase int16 // baseline, from the top of the title bar
+	demo      Rect  // empty: no demo
+	paint     Rect
+	swatch0   Rect // the first palette swatch; the others follow 34px apart
+	clear     Rect
+}
+
+// layoutFor returns the layout for a w x h screen.
+func layoutFor(w, h int16) layout {
+	if w >= 480 && h >= 272 {
+		return layout{
+			title:     Rect{0, 0, 480, 32},
+			titleText: "ESP32-4827S043 + TinyGo",
+			titleFont: &freesans.Bold12pt7b,
+			titleBase: 23,
+			demo:      Rect{0, 32, 200, 240},
+			paint:     Rect{204, 36, 272, 196},
+			swatch0:   Rect{204, 238, 30, 30},
+			clear:     Rect{412, 238, 64, 30},
+		}
+	}
+	return layout{
+		title:     Rect{0, 0, w, 24},
+		titleText: "TinyGo paint",
+		titleFont: &freesans.Bold9pt7b,
+		titleBase: 17,
+		paint:     Rect{4, 28, w - 8, h - 28 - 40},
+		swatch0:   Rect{4, h - 36, 30, 30},
+		clear:     Rect{w - 68, h - 36, 64, 30},
+	}
+}
+
+func (l *layout) swatch(i int) Rect {
+	s := l.swatch0
+	s.X += int16(i) * 34
+	return s
 }
 
 // App is the paint application.
 type App struct {
 	d hal.Display
 	t hal.Touch
+	l layout
 
 	pen      int  // selected palette index
 	down     bool // pen is on the paint area
@@ -74,9 +117,11 @@ type App struct {
 	wasTouch bool
 }
 
-// New creates the app. Call Draw once, then Step periodically.
+// New creates the app for the size of d. Call Draw once, then Step
+// periodically.
 func New(d hal.Display, t hal.Touch) *App {
-	return &App{d: d, t: t}
+	w, h := d.Size()
+	return &App{d: d, t: t, l: layoutFor(w, h)}
 }
 
 // Draw draws the whole screen.
@@ -85,20 +130,26 @@ func (a *App) Draw() {
 	w, h := d.Size()
 	d.FillRectangle(0, 0, w, h, bgColor)
 
-	// Title bar.
-	d.FillRectangle(titleBar.X, titleBar.Y, titleBar.W, titleBar.H, titleColor)
-	tinyfont.WriteLine(d, &freesans.Bold12pt7b, 8, 23, "ESP32-4827S043 + TinyGo", White)
+	l := &a.l
 
-	DrawDemo(d, demoPanel)
+	// Title bar.
+	d.FillRectangle(l.title.X, l.title.Y, l.title.W, l.title.H, titleColor)
+	tinyfont.WriteLine(d, l.titleFont, 8, l.title.Y+l.titleBase, l.titleText, White)
+
+	if l.demo.W > 0 {
+		DrawDemo(d, l.demo)
+	}
 
 	// Paint area and palette.
-	tinydraw.Rectangle(d, paintArea.X-1, paintArea.Y-1, paintArea.W+2, paintArea.H+2, borderColor)
+	p := l.paint
+	tinydraw.Rectangle(d, p.X-1, p.Y-1, p.W+2, p.H+2, borderColor)
 	a.clearPaint()
 	for i := range palette {
 		a.drawSwatch(i)
 	}
-	d.FillRectangle(clearBtn.X, clearBtn.Y, clearBtn.W, clearBtn.H, buttonColor)
-	tinyfont.WriteLine(d, &proggy.TinySZ8pt7b, clearBtn.X+14, clearBtn.Y+19, "CLEAR", White)
+	c := l.clear
+	d.FillRectangle(c.X, c.Y, c.W, c.H, buttonColor)
+	tinyfont.WriteLine(d, &proggy.TinySZ8pt7b, c.X+14, c.Y+19, "CLEAR", White)
 }
 
 // DrawDemo draws tinydraw shapes and tinyfont text inside r.
@@ -141,11 +192,12 @@ func DrawColorBars(d hal.Display) {
 }
 
 func (a *App) clearPaint() {
-	a.d.FillRectangle(paintArea.X, paintArea.Y, paintArea.W, paintArea.H, paperColor)
+	p := a.l.paint
+	a.d.FillRectangle(p.X, p.Y, p.W, p.H, paperColor)
 }
 
 func (a *App) drawSwatch(i int) {
-	s := swatch(i)
+	s := a.l.swatch(i)
 	frame := bgColor
 	if i == a.pen {
 		frame = White
@@ -165,7 +217,7 @@ func (a *App) Step() bool {
 	}
 	newPress := !a.wasTouch
 
-	if paintArea.Contains(x, y) {
+	if a.l.paint.Contains(x, y) {
 		if a.down {
 			a.stroke(a.lastX, a.lastY, x, y)
 		} else {
@@ -179,12 +231,12 @@ func (a *App) Step() bool {
 	if !newPress {
 		return false
 	}
-	if clearBtn.Contains(x, y) {
+	if a.l.clear.Contains(x, y) {
 		a.clearPaint()
 		return true
 	}
 	for i := range palette {
-		if swatch(i).Contains(x, y) && i != a.pen {
+		if a.l.swatch(i).Contains(x, y) && i != a.pen {
 			old := a.pen
 			a.pen = i
 			a.drawSwatch(old)
@@ -197,18 +249,19 @@ func (a *App) Step() bool {
 
 // dot draws a 3x3 pen dot clipped to the paint area.
 func (a *App) dot(x, y int16) {
+	p := a.l.paint
 	x0, y0, x1, y1 := x-1, y-1, x+2, y+2
-	if x0 < paintArea.X {
-		x0 = paintArea.X
+	if x0 < p.X {
+		x0 = p.X
 	}
-	if y0 < paintArea.Y {
-		y0 = paintArea.Y
+	if y0 < p.Y {
+		y0 = p.Y
 	}
-	if x1 > paintArea.X+paintArea.W {
-		x1 = paintArea.X + paintArea.W
+	if x1 > p.X+p.W {
+		x1 = p.X + p.W
 	}
-	if y1 > paintArea.Y+paintArea.H {
-		y1 = paintArea.Y + paintArea.H
+	if y1 > p.Y+p.H {
+		y1 = p.Y + p.H
 	}
 	if x0 < x1 && y0 < y1 {
 		a.d.FillRectangle(x0, y0, x1-x0, y1-y0, palette[a.pen])

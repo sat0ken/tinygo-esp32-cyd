@@ -38,6 +38,41 @@ func TestInitialScreen(t *testing.T) {
 	checkGolden(t, "app_initial", d)
 }
 
+// TestSmallScreen draws the 320x240 layout (ESP32-2432S028R), paints on
+// it and clears it again.
+func TestSmallScreen(t *testing.T) {
+	d := memlcd.New(320, 240)
+	touch := &memlcd.Touch{}
+	a := app.New(d, touch)
+	a.Draw()
+	checkGolden(t, "app_small", d)
+
+	start := memlcd.New(320, 240)
+	b := app.New(start, &memlcd.Touch{})
+	b.Draw()
+	step := func(x, y int16, pressed bool) {
+		touch.X, touch.Y, touch.Pressed = x, y, pressed
+		a.Step()
+	}
+	step(4+34+15, 219, true) // red swatch
+	step(0, 0, false)
+	step(40, 60, true) // a stroke on the paper
+	step(200, 150, true)
+	step(0, 0, false)
+	if d.Pixel(120, 105) == start.Pixel(120, 105) {
+		t.Fatal("nothing painted")
+	}
+	step(280, 219, true) // CLEAR
+	step(0, 0, false)
+	for y := int16(28); y < 200; y++ {
+		for x := int16(4); x < 316; x++ {
+			if d.Pixel(x, y) != start.Pixel(x, y) {
+				t.Fatalf("paint area not cleared at (%d,%d)", x, y)
+			}
+		}
+	}
+}
+
 func TestTouchPaint(t *testing.T) {
 	d := memlcd.New(board.Width, board.Height)
 	touch := &memlcd.Touch{}
