@@ -170,6 +170,7 @@ make flash-s028 PKG=./cmd/app               # お絵描きアプリ（320×240 �
 make examples-s028                          # この基板で動く全プログラムのビルド確認
 ```
 
+- LCDwiki の「2.8inch ESP32-32E Display」（E32R28T、USB Type-C・電池端子つき）も、液晶・タッチ・SD のピンが同じなので同じターゲットで動く。違うのは RGB LED の赤（IO22）、IO4（スピーカーアンプの有効化、Low で有効）、IO34（電池電圧）だけ（board/s028 の `E32R28T*`）。
 - 液晶は 3.5インチ版と同じ `spilcd`（初期化手順だけ ILI9341 用）。タッチは S043 と同じ `xpttouch`（ピンは別）。
 - 画面が 480×272 より小さいので、ゲーム（cmd/games・07〜12）は動かない。`platform.Init()` は画面全体（320×240）を返し、画面の大きさに合わせて描くプログラム（s028_check、cmd/app）だけが動く。
 - 向き（`MADCTL`）とタッチのキャリブレーション（`TouchRaw*`）は実機で未確認。s028_check の `r`・`k` で確かめて board/s028 に書く。

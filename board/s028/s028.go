@@ -15,9 +15,15 @@
 // Nothing here depends on the machine package, so the constants can be used
 // from host tests as well.
 //
+// The LCDwiki "2.8inch ESP32-32E Display" (E32R28T: ESP32-32E module,
+// ILI9341V, XPT2046, USB-C, battery charger) has the same panel, touch and
+// microSD pins, so it uses this package too. Only parts not used yet
+// differ: see E32R28T below.
+//
 // Sources:
 //   - rzeldent/platformio-espressif32-sunton esp32-2432S028R.json
 //   - witnessmenow/ESP32-Cheap-Yellow-Display PINS.md
+//   - lcdwiki.com 2.8inch_ESP32-32E_Display (E32R28T)
 package s028
 
 // Screen size in landscape.
@@ -93,6 +99,14 @@ const (
 	PinLEDBlue  = 17
 	PinSpeaker  = 26 // amplifier input (connector P4)
 	PinLight    = 34 // CdS light sensor (ADC)
+)
+
+// E32R28T (LCDwiki 2.8inch ESP32-32E Display): the pins that differ from
+// the ESP32-2432S028R. Its panel reset is wired to EN.
+const (
+	E32R28TPinLEDRed    = 22 // RGB LED (common anode), low = on; green 16, blue 17 as above
+	E32R28TPinAmpEnable = 4  // speaker amplifier, low = enabled (the red LED on the S028R)
+	E32R28TPinBattery   = 34 // battery voltage (ADC), not a light sensor
 )
 
 // Connectors: P1 (VIN, TX, RX, GND), P3 (GND, IO35, IO22, IO21 = backlight),
