@@ -27,6 +27,7 @@ board/s028/   ESP32-2432S028R のピン番号・設定値
 spilcd/       SPI 液晶ドライバ（ST7796・ILI9341、フレームバッファなし。ESP32-3248S035C・ESP32-2432S028R）
 gt911/        GT911 静電容量タッチ（I2C）→ 画面座標（hal.Touch）
 viewport/     大きい画面の中の小さい窓（480×320 の中で 480×272 のゲームを動かす）
+minijoy/      I2C のミニジョイスティックモジュール（nulllab、0x5A）のドライバ
 romfont/      フラッシュに置くフォント（tinyfont の freesans・proggy を tools/fontgen で変換。描画は同じ）
 wasmlcd/      ブラウザ用バックエンド（canvas + pointer イベント）
 memlcd/       メモリ上バックエンド（テスト用、PNG 出力）
@@ -186,6 +187,22 @@ make examples-s028                          # この基板で動く全プログ�
 | 色の帯 | 左から赤・緑・青・シアン・マゼンタ・黄・白・黒 | `o`（赤青）、`i`（反転） |
 | 向き | 「TOP LEFT」が左上 | `r`（180度）。直ったら `MADCTL = 0xE8` |
 | タッチ | 黄色い点がペン先の位置に出る | `k`（4隅のタップ）で測り、ログの値を board/s028 の `TouchRaw*` に書く |
+
+## ミニジョイスティックモジュール（joystick_check）
+
+[nulllaborg/mini-joystick-module](https://github.com/nulllaborg/mini-joystick-module)（ジョイスティックとボタン A〜D、CH32V003、I2C アドレス 0x5A）を ESP32 の基板につなぐ確認用プログラム。
+
+- **3.3V で給電する**（5V にしない）。モジュールの SDA・SCL は 4.7kΩ でモジュールの電源に引き上げられているので、5V で給電すると ESP32 の端子に 5V がかかる。CH32V003 は 2.7V から動く（3.3V での動作はメーカーの説明にはない）。
+- 配線（examples/joystick_check の `pins_*.go`）：
+
+| 基板 | 配線 | 書き込み |
+|---|---|---|
+| ESP32-2432S028R | CN1：GND、3.3V、IO27=SDA、IO22=SCL | `make flash-s028 PKG=./examples/joystick_check` |
+| E32R28T | SPI 端子 IO27=SDA・IO18=SCL、拡張端子 3.3V・GND | `make flash-s028 PKG=./examples/joystick_check TAGS=e32r28t` |
+| ESP32-3248S035C | CN1：GND、3.3V、IO21=SDA、IO22=SCL（IO21 が GT911 の INT なら使えない） | `make flash-s035 PKG=./examples/joystick_check` |
+
+- 起動時のログ：I2C のスキャン結果、全レジスタの値、まとめ読み・リピートスタートでの読み出しが使えるか、1回の読み取り時間。そのあと画面にスティックの位置とボタンの状態を出し、変化をログに出す。
+- どのイベントが「押している間」を表すかは説明がないので、各ボタンを押す・押し続ける・離すをして、ログで確かめる。
 
 ## ブラウザ（wasm）で動かす
 

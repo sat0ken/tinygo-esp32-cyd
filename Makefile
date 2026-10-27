@@ -14,12 +14,13 @@ EXAMPLES := 01_backlight 02_colorbars 03_tinydraw 04_touch 05_slideshow 06_sdsli
 S035      := ./targets/esp32-3248s035c.json
 S035_PKGS := ./examples/s035_check ./examples/03_tinydraw ./examples/07_breakout \
 	./examples/08_invaders ./examples/09_sudoku ./examples/10_othello \
-	./examples/11_solitaire ./examples/12_poker ./cmd/app ./cmd/games
+	./examples/11_solitaire ./examples/12_poker ./cmd/app ./cmd/games \
+	./examples/joystick_check
 
 # ESP32-2432S028R (2.8" ILI9341 320x240, XPT2046 touch): only the programs
 # that adapt to the screen size (the games need 480x272).
 S028      := ./targets/esp32-2432s028r.json
-S028_PKGS := ./examples/s028_check ./cmd/app
+S028_PKGS := ./examples/s028_check ./cmd/app ./examples/joystick_check
 
 .PHONY: flash flash-noerase flash-slides flash-s035 flash-s028 monitor build examples examples-s035 examples-s028 wasm serve test test-browser update-golden slides clean
 
@@ -98,8 +99,9 @@ endef
 
 # make flash-s028 PKG=./examples/s028_check
 # make flash-s028 PKG=./cmd/app PORT=/dev/ttyUSB0
+# TAGS=e32r28t selects the E32R28T wiring in examples/joystick_check.
 flash-s028:
-	tinygo flash -target=$(S028) $(PORTFLAG) -monitor $(PKG)
+	tinygo flash -target=$(S028) $(if $(TAGS),-tags $(TAGS)) $(PORTFLAG) -monitor $(PKG)
 
 # Build every program that runs on the ESP32-2432S028R (compile check).
 examples-s028:
