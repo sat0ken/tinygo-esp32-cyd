@@ -1,4 +1,4 @@
-//go:build !esp32s3 && !esp32_3248s035c && !(js && wasm)
+//go:build !esp32s3 && !esp32_3248s035c && !esp32_2432s028r && !(js && wasm)
 
 package platform
 

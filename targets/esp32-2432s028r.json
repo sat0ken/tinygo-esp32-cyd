@@ -1,0 +1,10 @@
+{
+	"inherits": [
+		"esp32-generic"
+	],
+	"build-tags": [
+		"esp32_2432s028r"
+	],
+	"serial": "uart",
+	"flash-method": "esp32flash"
+}

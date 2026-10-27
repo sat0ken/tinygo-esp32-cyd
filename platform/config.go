@@ -1,4 +1,4 @@
-//go:build !esp32_3248s035c
+//go:build !esp32_3248s035c && !esp32_2432s028r
 
 // Package platform initialises the display and touch for the current build
 // target: the ESP32-4827S043 (esp32s3), the ESP32-3248S035C (build tag

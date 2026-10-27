@@ -24,6 +24,7 @@ ESP32-4827S043（ESP32-S3 + 4.3インチ 480×272 RGB 液晶）を TinyGo で動
 13. [運用：コマンド・よくある作業・トラブル](#13-運用コマンドよくある作業トラブル)
 14. [未解決・注意事項](#14-未解決注意事項)
 15. [ESP32-3248S035C（3.5インチ・SPI 液晶）](#15-esp32-3248s035c35インチspi-液晶)
+16. [ESP32-2432S028R（2.8インチ・320×240）](#16-esp32-2432s028r28インチ320240)
 
 ---
 
@@ -65,7 +66,10 @@ ESP32-4827S043（ESP32-S3 + 4.3インチ 480×272 RGB 液晶）を TinyGo で動
 | [xpttouch/](../xpttouch/) | XPT2046 タッチの読み取り | 実機 |
 | [touchcal/](../touchcal/calib.go) | タッチの raw 値 → 画面座標、4隅からのキャリブレーション | 全部 |
 | [romfont/](../romfont/romfont.go) | フォントを文字列にしてフラッシュに置く（tinyfont と同じ描画）。`go generate ./romfont` で [tools/fontgen](../tools/fontgen/main.go) が作る | 全部 |
-| [board/s035/](../board/s035/s035.go)・[st7796/](../st7796/st7796.go)・[gt911/](../gt911/gt911.go)・[viewport/](../viewport/viewport.go) | ESP32-3248S035C 用（[15章](#15-esp32-3248s035c35インチspi-液晶)） | 実機（ドライバはホストでもテスト） |
+| [spilcd/](../spilcd/spilcd.go) | SPI 液晶（ST7796・ILI9341）のドライバ。フレームバッファなし | 実機（ホストでもテスト） |
+| [board/s035/](../board/s035/s035.go)・[gt911/](../gt911/gt911.go)・[viewport/](../viewport/viewport.go) | ESP32-3248S035C 用（[15章](#15-esp32-3248s035c35インチspi-液晶)） | 実機（ドライバはホストでもテスト） |
+| [board/s028/](../board/s028/s028.go) | ESP32-2432S028R 用（[16章](#16-esp32-2432s028r28インチ320240)） | 全部 |
+| [internal/panelcheck/](../internal/panelcheck/panelcheck.go) | SPI 液晶基板の確認プログラム（s035_check・s028_check）の共通部分 | 実機 |
 | [flashmap/](../flashmap/flashmap.go) | フラッシュの任意の領域を MMU でメモリとして読めるようにする | 実機 |
 | [slidepack/](../slidepack/slidepack.go) | 複数の全画面画像を1ファイルにまとめる形式 | 全部 |
 | [slideshow/](../slideshow/) | スライドショー本体（切り替え効果・キャプション・タッチ操作）と SD 用の読み込み | 全部 |
@@ -695,18 +699,19 @@ ESP32（無印、PSRAM なし）、ST7796（320×480、SPI）、GT911（静電�
 |---|---|---|
 | CPU・RAM | ESP32-S3、内蔵 SRAM 512KB | ESP32、TinyGo が使える DRAM は 192KB |
 | 液晶 | RGB パラレル、DMA が常にフレームバッファを送る | SPI（40MHz）、液晶側が画面のメモリを持つ |
-| 描画 | フレームバッファに書くだけ（速い） | 描くたびに SPI で送る（[st7796](../st7796/st7796.go)） |
+| 描画 | フレームバッファに書くだけ（速い） | 描くたびに SPI で送る（[spilcd](../spilcd/spilcd.go)） |
 | タッチ | XPT2046（抵抗膜、SPI ビットバング） | GT911（静電容量、I2C 400kHz） |
 | ターゲット | esp32s3-generic を継承 | [esp32-generic](../targets/esp32-3248s035c.json) を継承（I2C のピン定数が要るため） |
 
-### 描画（st7796）
+### 描画（spilcd）
 
+- コントローラごとに違うのは初期化手順だけ（`spilcd.InitST7796`・`InitILI9341`）。CASET・RASET・RAMWR・MADCTL などの描画のコマンドは共通（MIPI DCS）。初期化手順のデータは文字列なのでフラッシュに置かれる。
 - 480×320×2 = 300KB のフレームバッファは RAM に入らないので持たない。`FillRectangle` は「アドレス窓（CASET・RASET）→ RAMWR → 色を繰り返し送る」。`DrawRGBBitmap8` のバイト列（ビッグエンディアン RGB565）はそのまま液晶の形式なので、そのまま送る。
 - **SetPixel のまとめ送り**：1点ごとに窓を設定すると遅い。tinyfont は文字を左上から1行ずつ1点ずつ描くので、同じ行で右に続く同じ色の点を「ラン」にまとめ、続かなくなったときに1本の矩形として送る。まだ送っていないランは `Display()` か次の描画で送る。
 - 前回と同じ CASET・RASET は送らない（同じ行のランは列だけ変わる）。
 - 速さ（実測、SPI 40MHz）：480×320 の全画面塗りつぶし 77ms（理論値 61ms）、freesans Bold 9pt の文字 300 字で 137ms（1字 約 0.5ms）。
 - 液晶からの読み出しはできない（ID が常に 0。MISO が液晶につながっていないらしい）。描画には不要。
-- テストは液晶の側を真似る [panel](../st7796/st7796_test.go)（コマンドを解釈して画素を持つ）を作り、フレームバッファに同じものを描いた結果と画素単位で比べる。
+- テストは液晶の側を真似る [panel](../spilcd/spilcd_test.go)（コマンドを解釈して画素を持つ）を作り、フレームバッファに同じものを描いた結果と画素単位で比べる。
 
 ### 480×272 のプログラムを動かす（viewport）
 
@@ -744,4 +749,19 @@ ESP32（無印、PSRAM なし）、ST7796（320×480、SPI）、GT911（静電�
 
 ### 実機で確かめること（s035_check）
 
-[s035_check](../examples/s035_check/main.go) を書き込み、ログ・色の帯・向き・タッチを見る。シリアルのコマンドで MADCTL（`r` 180度、`o` 赤青）・反転（`i`）を切り替えられ、`k` で4隅のキャリブレーション、`f`・`t` で描画速度を測る。合っていたら値を board/s035 に書く。
+[s035_check](../examples/s035_check/main.go) を書き込み、ログ・色の帯・向き・タッチを見る。シリアルのコマンドで MADCTL（`r` 180度、`o` 赤青）・反転（`i`）を切り替えられ、`k` で4隅のキャリブレーション、`f`・`t` で描画速度を測る。合っていたら値を board/s035 に書く。テスト画面・コマンド・キャリブレーションは s028_check と共通で、[internal/panelcheck](../internal/panelcheck/panelcheck.go) にある。
+
+## 16. ESP32-2432S028R（2.8インチ・320×240）
+
+ESP32（PSRAM なし）、ILI9341（240×320、SPI）、XPT2046（抵抗膜タッチ）。横向き 320×240 で使う。ピンと設定値は [board/s028](../board/s028/s028.go)。CPU と描画の仕組みは 3.5インチ版（15章）と同じ。
+
+| | ESP32-3248S035C | ESP32-2432S028R |
+|---|---|---|
+| 液晶 | ST7796、480×320 | ILI9341、320×240（`spilcd.InitILI9341`） |
+| タッチ | GT911（I2C） | XPT2046（S043 と同じ [xpttouch](../xpttouch/xpttouch.go)、ピンは CLK 25・MOSI 32・MISO 39・CS 33・IRQ 36） |
+| `platform.Init()` | 中央の 480×272 の窓 | 画面全体の 320×240 |
+| 動くプログラム | 03、07〜12、cmd/app、cmd/games | s028_check、cmd/app |
+
+- 480×272 より小さいので、480×272 で配置を決めているゲームは動かない（窓に入らない）。[app](../app/app.go) は `New` で画面の大きさから配置を選び、480×272 未満ならデモを省いて紙・パレット・CLEAR だけにする（ゴールデン画像 `app_small`）。
+- 液晶の MISO（GPIO12）は液晶の SDO につながっている（3.5インチ版はつながっていなかった）。s028_check は起動時に ID を読み、TinyGo の SPI で読み出しができるかも確かめる。
+- 共通部分：タッチを読む前に未送信のランを送る `flushTouch`（[spilcd_esp32.go](../platform/spilcd_esp32.go)）、起動時の診断（[boot_esp32.go](../platform/boot_esp32.go)）。`make examples-s028` も `machine._UART0` の置き場所を確かめる（15章）。

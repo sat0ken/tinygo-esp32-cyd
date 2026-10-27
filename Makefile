@@ -16,7 +16,12 @@ S035_PKGS := ./examples/s035_check ./examples/03_tinydraw ./examples/07_breakout
 	./examples/08_invaders ./examples/09_sudoku ./examples/10_othello \
 	./examples/11_solitaire ./examples/12_poker ./cmd/app ./cmd/games
 
-.PHONY: flash flash-noerase flash-slides flash-s035 monitor build examples examples-s035 wasm serve test test-browser update-golden slides clean
+# ESP32-2432S028R (2.8" ILI9341 320x240, XPT2046 touch): only the programs
+# that adapt to the screen size (the games need 480x272).
+S028      := ./targets/esp32-2432s028r.json
+S028_PKGS := ./examples/s028_check ./cmd/app
+
+.PHONY: flash flash-noerase flash-slides flash-s035 flash-s028 monitor build examples examples-s035 examples-s028 wasm serve test test-browser update-golden slides clean
 
 ## Board ------------------------------------------------------------------
 
@@ -70,20 +75,35 @@ flash-s035:
 	tinygo flash -target=$(S035) $(PORTFLAG) -monitor $(PKG)
 
 # Build every program that runs on the ESP32-3248S035C (compile check).
-#
-# It also checks that machine._UART0 is initialised at compile time (in
-# .data, "d"): if a package initializer is left for run time, TinyGo may
-# leave UART0's for run time too, and the ESP32 then hangs at boot because
-# the runtime uses the UART before running package initializers (see
-# docs/ARCHITECTURE.md, chapter 15).
 examples-s035:
-	@mkdir -p out
-	@for p in $(S035_PKGS); do \
-		echo "== $$p"; \
-		tinygo build -target=$(S035) -size short -o out/s035-check.elf $$p || exit 1; \
-		go tool nm out/s035-check.elf | grep -q ' d machine._UART0$$' || \
-			{ echo "$$p: machine._UART0 is not initialised at compile time: it would hang at boot"; exit 1; }; \
-	done
+	@$(call esp32-check,$(S035),$(S035_PKGS))
+
+# esp32-check builds every program in $(2) for the ESP32 target $(1), and
+# checks that machine._UART0 is initialised at compile time (in .data, "d"):
+# if a package initializer is left for run time, TinyGo may leave UART0's
+# for run time too, and the ESP32 then hangs at boot because the runtime
+# uses the UART before running package initializers (see
+# docs/ARCHITECTURE.md, chapter 15).
+define esp32-check
+mkdir -p out; \
+for p in $(2); do \
+	echo "== $$p"; \
+	tinygo build -target=$(1) -size short -o out/esp32-check.elf $$p || exit 1; \
+	go tool nm out/esp32-check.elf | grep ' d machine._UART0$$' >/dev/null || \
+		{ echo "$$p: machine._UART0 is not initialised at compile time: it would hang at boot"; exit 1; }; \
+done
+endef
+
+## ESP32-2432S028R ---------------------------------------------------------
+
+# make flash-s028 PKG=./examples/s028_check
+# make flash-s028 PKG=./cmd/app PORT=/dev/ttyUSB0
+flash-s028:
+	tinygo flash -target=$(S028) $(PORTFLAG) -monitor $(PKG)
+
+# Build every program that runs on the ESP32-2432S028R (compile check).
+examples-s028:
+	@$(call esp32-check,$(S028),$(S028_PKGS))
 
 ## Browser ----------------------------------------------------------------
 

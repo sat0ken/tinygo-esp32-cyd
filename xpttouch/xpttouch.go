@@ -1,4 +1,4 @@
-//go:build esp32s3
+//go:build esp32s3 || esp32_2432s028r
 
 package xpttouch
 
