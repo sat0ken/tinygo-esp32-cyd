@@ -1,13 +1,14 @@
-//go:build esp32_3248s035c
+//go:build esp32
 
 package platform
 
 import "device/esp"
 
-// Boot diagnostics of the ESP32-3248S035C. TinyGo's kernel exception
-// handler (targets/esp32-interrupts.S) saves the cause and the PC in RTC
-// STORE0 (0x5556xxxx, xxxx = EXCCAUSE) and STORE1 before it resets the
-// chip, so a crash that ended in a reset is printed on the next boot. The
+// Boot diagnostics of the ESP32 boards (ESP32-3248S035C, ESP32-2432S028R).
+// TinyGo's kernel exception handler (targets/esp32-interrupts.S) saves the
+// cause and the PC in RTC STORE0 (0x5556xxxx, xxxx = EXCCAUSE) and STORE1
+// before it resets the chip, so a crash that ended in a reset is printed
+// on the next boot. The
 // reset reason is printed when it is not a power-on (the RST button is a
 // power-on reset too).
 

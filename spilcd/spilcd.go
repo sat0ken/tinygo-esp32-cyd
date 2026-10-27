@@ -1,5 +1,8 @@
-// Package st7796 drives an ST7796S TFT controller (320x480) over 4-wire
-// SPI without a frame buffer: every drawing call goes to the panel at once.
+// Package spilcd drives SPI TFT controllers that use the MIPI DCS commands
+// (CASET, RASET, RAMWR, MADCTL...), such as the ST7796S (ESP32-3248S035C)
+// and the ILI9341 (ESP32-2432S028R), over 4-wire SPI without a frame
+// buffer: every drawing call goes to the panel at once. Only the init
+// sequence differs between controllers (Config.Init).
 //
 // SetPixel is the slow path (each pixel needs its own address window), and
 // tinyfont draws text pixel by pixel, so the driver joins pixels of the
@@ -9,7 +12,7 @@
 //
 // The package does not import machine: the SPI bus and the pins are small
 // interfaces, so the command stream can be tested on the host.
-package st7796
+package spilcd
 
 import (
 	"image/color"
@@ -44,16 +47,28 @@ const (
 
 // Config is the panel setting.
 type Config struct {
-	// Width and Height after MADCTL (480x320 in landscape).
+	// Width and Height after MADCTL (480x320 or 320x240 in landscape).
 	Width, Height int16
 	MADCTL        byte
 	Invert        bool
+	// Init is the controller's init sequence, sent after the software
+	// reset: InitST7796 or InitILI9341. It must leave sleep mode and set
+	// 16-bit colour (COLMOD 0x55); MADCTL, the inversion and DISPON follow.
+	Init []Command
+}
+
+// Command is one step of an init sequence. Data is a string so that the
+// sequences stay in flash.
+type Command struct {
+	Cmd  byte
+	Data string
+	Wait time.Duration // after the command
 }
 
 // pixel bytes sent at a time (a multiple of 64, the ESP32 SPI FIFO).
 const bufSize = 1024
 
-// Device is an ST7796 panel.
+// Device is a panel.
 type Device struct {
 	bus    Bus
 	dc, cs Pin
@@ -81,25 +96,46 @@ func New(bus Bus, dc, cs Pin) *Device {
 	return &Device{bus: bus, dc: dc, cs: cs, Sleep: time.Sleep}
 }
 
-// init sequence after SLPOUT: TFT_eSPI ST7796_Init.h.
-var initSeq = []struct {
-	cmd  byte
-	data []byte
-	wait time.Duration
-}{
-	{0xF0, []byte{0xC3}, 0}, // enable extension command 2 part I
-	{0xF0, []byte{0x96}, 0}, // part II
-	{COLMOD, []byte{0x55}, 0},
-	{0xB4, []byte{0x01}, 0},             // 1-dot inversion
-	{0xB6, []byte{0x80, 0x02, 0x3B}, 0}, // display function control
-	{0xE8, []byte{0x40, 0x8A, 0x00, 0x00, 0x29, 0x19, 0xA5, 0x33}, 0},
-	{0xC1, []byte{0x06}, 0},                      // power control 2
-	{0xC2, []byte{0xA7}, 0},                      // power control 3
-	{0xC5, []byte{0x18}, 120 * time.Millisecond}, // VCOM
-	{0xE0, []byte{0xF0, 0x09, 0x0B, 0x06, 0x04, 0x15, 0x2F, 0x54, 0x42, 0x3C, 0x17, 0x14, 0x18, 0x1B}, 0},
-	{0xE1, []byte{0xE0, 0x09, 0x0B, 0x06, 0x04, 0x03, 0x2B, 0x43, 0x42, 0x3B, 0x16, 0x14, 0x17, 0x1B}, 120 * time.Millisecond},
-	{0xF0, []byte{0x3C}, 0}, // disable extension command 2 part I
-	{0xF0, []byte{0x69}, 120 * time.Millisecond},
+// InitST7796 is the ST7796S init sequence of TFT_eSPI (ST7796_Init.h).
+var InitST7796 = []Command{
+	{SLPOUT, "", 120 * time.Millisecond},
+	{0xF0, "\xC3", 0}, // enable extension command 2 part I
+	{0xF0, "\x96", 0}, // part II
+	{COLMOD, "\x55", 0},
+	{0xB4, "\x01", 0},         // 1-dot inversion
+	{0xB6, "\x80\x02\x3B", 0}, // display function control
+	{0xE8, "\x40\x8A\x00\x00\x29\x19\xA5\x33", 0},
+	{0xC1, "\x06", 0},                      // power control 2
+	{0xC2, "\xA7", 0},                      // power control 3
+	{0xC5, "\x18", 120 * time.Millisecond}, // VCOM
+	{0xE0, "\xF0\x09\x0B\x06\x04\x15\x2F\x54\x42\x3C\x17\x14\x18\x1B", 0},
+	{0xE1, "\xE0\x09\x0B\x06\x04\x03\x2B\x43\x42\x3B\x16\x14\x17\x1B", 120 * time.Millisecond},
+	{0xF0, "\x3C", 0}, // disable extension command 2 part I
+	{0xF0, "\x69", 120 * time.Millisecond},
+}
+
+// InitILI9341 is the ILI9341 init sequence of Adafruit_ILI9341 (initcmd).
+var InitILI9341 = []Command{
+	{0xEF, "\x03\x80\x02", 0},
+	{0xCF, "\x00\xC1\x30", 0},     // power control B
+	{0xED, "\x64\x03\x12\x81", 0}, // power on sequence control
+	{0xE8, "\x85\x00\x78", 0},     // driver timing control A
+	{0xCB, "\x39\x2C\x00\x34\x02", 0},
+	{0xF7, "\x20", 0},     // pump ratio control
+	{0xEA, "\x00\x00", 0}, // driver timing control B
+	{0xC0, "\x23", 0},     // power control 1
+	{0xC1, "\x10", 0},     // power control 2
+	{0xC5, "\x3E\x28", 0}, // VCOM control 1
+	{0xC7, "\x86", 0},     // VCOM control 2
+	{0x37, "\x00", 0},     // vertical scroll start
+	{COLMOD, "\x55", 0},
+	{0xB1, "\x00\x18", 0},     // frame rate 79Hz
+	{0xB6, "\x08\x82\x27", 0}, // display function control
+	{0xF2, "\x00", 0},         // 3-gamma off
+	{0x26, "\x01", 0},         // gamma curve 1
+	{0xE0, "\x0F\x31\x2B\x0C\x0E\x08\x4E\xF1\x37\x07\x10\x03\x0E\x09\x00", 0},
+	{0xE1, "\x00\x0E\x14\x03\x11\x07\x31\xC1\x48\x08\x0F\x0C\x31\x36\x0F", 0},
+	{SLPOUT, "", 150 * time.Millisecond},
 }
 
 // Configure resets and initialises the panel and turns it on.
@@ -107,12 +143,11 @@ func (d *Device) Configure(cfg Config) {
 	d.cfg = cfg
 	d.Command(SWRESET)
 	d.Sleep(120 * time.Millisecond)
-	d.Command(SLPOUT)
-	d.Sleep(120 * time.Millisecond)
-	for _, c := range initSeq {
-		d.Command(c.cmd, c.data...)
-		if c.wait > 0 {
-			d.Sleep(c.wait)
+	for _, c := range cfg.Init {
+		n := copy(d.buf[:], c.Data)
+		d.Command(c.Cmd, d.buf[:n]...)
+		if c.Wait > 0 {
+			d.Sleep(c.Wait)
 		}
 	}
 	d.SetMADCTL(cfg.MADCTL)
@@ -314,4 +349,4 @@ type errorString string
 
 func (e errorString) Error() string { return string(e) }
 
-const errShortData = errorString("st7796: bitmap data too short")
+const errShortData = errorString("spilcd: bitmap data too short")

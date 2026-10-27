@@ -12,17 +12,17 @@ import (
 	"github.com/sat0ken/tinygo-cyd/board/s035"
 	"github.com/sat0ken/tinygo-cyd/gt911"
 	"github.com/sat0ken/tinygo-cyd/hal"
-	"github.com/sat0ken/tinygo-cyd/st7796"
+	"github.com/sat0ken/tinygo-cyd/spilcd"
 	"github.com/sat0ken/tinygo-cyd/touchcal"
 	"github.com/sat0ken/tinygo-cyd/viewport"
 )
 
 // The ESP32-3248S035C: ST7796 on SPI2 and GT911 on I2C0 (package
 // board/s035). There is no frame buffer: drawing goes straight to the
-// panel.
+// panel (package spilcd).
 
 var (
-	screen *st7796.Device
+	screen *spilcd.Device
 	touch  *gt911.Touch
 )
 
@@ -33,7 +33,7 @@ var (
 // The panel cannot be read back: on the board every read (RDDID, RDID4)
 // returns zeros, also with the SPI read phase (USR_MISO) enabled, so MISO
 // (GPIO12) does not seem to reach the panel. examples/s035_check "d" tries.
-func InitScreen() (*st7796.Device, error) {
+func InitScreen() (*spilcd.Device, error) {
 	if screen != nil {
 		return screen, nil
 	}
@@ -51,8 +51,8 @@ func InitScreen() (*st7796.Device, error) {
 	cs.Configure(machine.PinConfig{Mode: machine.PinOutput})
 	cs.Set(true)
 
-	d := st7796.New(spi, dc, cs)
-	d.Configure(st7796.Config{Width: s035.Width, Height: s035.Height, MADCTL: s035.MADCTL, Invert: s035.Invert})
+	d := spilcd.New(spi, dc, cs)
+	d.Configure(spilcd.Config{Width: s035.Width, Height: s035.Height, MADCTL: s035.MADCTL, Invert: s035.Invert, Init: spilcd.InitST7796})
 	cfg.Frequency = s035.SPIFrequency
 	if err := spi.Configure(cfg); err != nil {
 		return nil, err
@@ -143,20 +143,6 @@ func Init() (hal.Display, hal.Touch, error) {
 	win := viewport.New(d, s035.WindowX, s035.WindowY, s035.WindowW, s035.WindowH)
 	wt := viewport.NewTouch(t, s035.WindowX, s035.WindowY, s035.WindowW, s035.WindowH)
 	return win, flushTouch{wt, d}, nil
-}
-
-// flushTouch sends the pixels the display still holds (see st7796) before
-// reading the touch panel. Every game loop reads the touch panel once a
-// frame, so whatever was drawn in the last frame is on the screen even if
-// the code does not call Display.
-type flushTouch struct {
-	t hal.Touch
-	d *st7796.Device
-}
-
-func (f flushTouch) ReadTouch() (x, y int16, pressed bool) {
-	f.d.Display()
-	return f.t.ReadTouch()
 }
 
 var blPin = machine.Pin(s035.PinBacklight)

@@ -1,4 +1,4 @@
-package st7796
+package spilcd
 
 import (
 	"image/color"
@@ -12,7 +12,7 @@ import (
 	"tinygo.org/x/tinyfont"
 )
 
-// panel simulates the ST7796 side of the bus: it decodes commands and
+// panel simulates the controller side of the bus: it decodes commands and
 // keeps the pixels written with RAMWR (in screen coordinates; MADCTL is
 // not simulated).
 type panel struct {
@@ -90,7 +90,7 @@ func newTestDevice(w, h int16) (*Device, *panel) {
 	p := newPanel(int(w), int(h))
 	d := New(p, pinFunc(func(v bool) { p.dc = v }), pinFunc(func(v bool) { p.cs = v }))
 	d.Sleep = func(time.Duration) {}
-	d.Configure(Config{Width: w, Height: h, MADCTL: 0x28})
+	d.Configure(Config{Width: w, Height: h, MADCTL: 0x28, Init: InitST7796})
 	return d, p
 }
 
@@ -112,6 +112,22 @@ func compare(t *testing.T, p *panel, b *memlcd.Display, what string) {
 	}
 	if p.csErr {
 		t.Errorf("%s: data sent with CS high", what)
+	}
+}
+
+func TestILI9341Init(t *testing.T) {
+	p := newPanel(320, 240)
+	d := New(p, pinFunc(func(v bool) { p.dc = v }), pinFunc(func(v bool) { p.cs = v }))
+	d.Sleep = func(time.Duration) {}
+	d.Configure(Config{Width: 320, Height: 240, MADCTL: 0x28, Init: InitILI9341})
+	n := len(p.cmds)
+	if p.cmds[0] != SWRESET || p.cmds[n-4] != SLPOUT || p.cmds[n-1] != DISPON {
+		t.Errorf("commands %x", p.cmds)
+	}
+	white := color.RGBA{255, 255, 255, 255}
+	d.FillRectangle(310, 230, 20, 20, white) // clipped at 320x240
+	if p.pix[239*320+319] != 0xFFFF || p.pix[230*320+309] != 0 {
+		t.Error("fill not clipped to 320x240")
 	}
 }
 
