@@ -77,15 +77,21 @@ const (
 
 // Touch calibration: raw 12-bit XPT2046 readings (xpttouch.ReadRaw) at the
 // left/right and top/bottom edges of the landscape screen (see
-// touchcal.Calibration). These are a first guess from the usual CYD
-// examples (x 200..3700, y 240..3800); measure them on the board with
-// examples/s028_check ("k").
+// touchcal.Calibration).
+//
+// Measured on the E32R28T with examples/s028_check "k" (2026-10-27): raw
+// (555,3675) (510,576) (3544,506) (3570,3649) at the targets 20 pixels in
+// from the top-left, top-right, bottom-right and bottom-left corners, so
+// raw X is the vertical axis. The ESP32-2432S028R wires the XPT2046 the
+// same way; measure it there too if the dots are off. (The first guess
+// from the usual CYD examples, x 200..3700 / y 240..3800 not swapped, was
+// wrong for MADCTL 0x28.)
 const (
-	TouchRawXLeft   = 200
-	TouchRawXRight  = 3700
-	TouchRawYTop    = 240
-	TouchRawYBottom = 3800
-	TouchSwapXY     = false
+	TouchRawXLeft   = 3885
+	TouchRawXRight  = 318
+	TouchRawYTop    = 228
+	TouchRawYBottom = 3861
+	TouchSwapXY     = true
 )
 
 // microSD slot on VSPI.
