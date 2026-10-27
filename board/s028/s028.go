@@ -52,8 +52,12 @@ const SPIFrequency = 40_000_000
 
 // MADCTL is the ILI9341 memory access control value: row/column exchange
 // for landscape (MV, 0x20) and BGR colour order (0x08). rzeldent: BGR,
-// portrait mirrored in X (0x48), so 0x28 or 0xE8 is landscape. Not checked
-// on the board yet (examples/s028_check: "r" turns it by 180 degrees).
+// portrait mirrored in X (0x48), so 0x28 or 0xE8 is landscape. Checked on
+// the ESP32-2432S028R and the E32R28T (2026-10-27, examples/s028_check):
+// the test screen looks right on both. Measured on the E32R28T: a full
+// 320x240 fill takes 39ms at 40MHz SPI, 300 characters 139ms. Reading the
+// panel ID gives zeros although MISO is wired to the panel on these boards,
+// also with USR_MISO set, so TinyGo's ESP32 SPI does not seem to read.
 const MADCTL = 0x28
 
 // Invert turns on the display inversion (INVON): off on the one-USB

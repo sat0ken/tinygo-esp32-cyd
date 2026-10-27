@@ -763,5 +763,7 @@ ESP32（PSRAM なし）、ILI9341（240×320、SPI）、XPT2046（抵抗膜タ�
 | 動くプログラム | 03、07〜12、cmd/app、cmd/games | s028_check、cmd/app |
 
 - 480×272 より小さいので、480×272 で配置を決めているゲームは動かない（窓に入らない）。[app](../app/app.go) は `New` で画面の大きさから配置を選び、480×272 未満ならデモを省いて紙・パレット・CLEAR だけにする（ゴールデン画像 `app_small`）。
-- 液晶の MISO（GPIO12）は液晶の SDO につながっている（3.5インチ版はつながっていなかった）。s028_check は起動時に ID を読み、TinyGo の SPI で読み出しができるかも確かめる。
+- 液晶の MISO（GPIO12）は液晶の SDO につながっている（資料による）。それでも s028_check の ID の読み出しは、USR_MISO を立てても全部 0 だった。3.5インチ版の「全部 0」も、配線ではなく TinyGo の ESP32 の SPI が読めていないのかもしれない。SD カード（読み出しが必須）を使うときに調べる。
+- 速さ（E32R28T、SPI 40MHz）：320×240 の全画面塗りつぶし 39ms（理論値 31ms）、文字 300 字 139ms。
+- LCDwiki の 2.8inch ESP32-32E Display（E32R28T）も同じピンなので同じターゲットで動く（違いは使っていない LED・アンプ・電池の端子だけ）。表示は両方の基板で確認済み。
 - 共通部分：タッチを読む前に未送信のランを送る `flushTouch`（[spilcd_esp32.go](../platform/spilcd_esp32.go)）、起動時の診断（[boot_esp32.go](../platform/boot_esp32.go)）。`make examples-s028` も `machine._UART0` の置き場所を確かめる（15章）。
