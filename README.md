@@ -190,9 +190,9 @@ make examples-s028                          # この基板で動く全プログ�
 
 ## ミニジョイスティックモジュール（joystick_check）
 
-[nulllaborg/mini-joystick-module](https://github.com/nulllaborg/mini-joystick-module)（ジョイスティックとボタン A〜D、CH32V003、I2C アドレス 0x5A）を ESP32 の基板につなぐ確認用プログラム。
+[nulllaborg/mini-joystick-module](https://github.com/nulllaborg/mini-joystick-module)（ジョイスティックとボタン4つ、CH32V003、I2C アドレス 0x5A）を ESP32 の基板につなぐ確認用プログラム。ドライバは [minijoy](minijoy/minijoy.go)。
 
-- **3.3V で給電する**（5V にしない）。モジュールの SDA・SCL は 4.7kΩ でモジュールの電源に引き上げられているので、5V で給電すると ESP32 の端子に 5V がかかる。CH32V003 は 2.7V から動く（3.3V での動作はメーカーの説明にはない）。
+- **3.3V で給電する**（5V にしない）。モジュールの SDA・SCL は 4.7kΩ でモジュールの電源に引き上げられているので、5V で給電すると ESP32 の端子に 5V がかかる。CH32V003 は 2.7V から動き、ESP32-2432S028R の 3.3V で動いた。
 - 配線（examples/joystick_check の `pins_*.go`）：
 
 | 基板 | 配線 | 書き込み |
@@ -201,8 +201,17 @@ make examples-s028                          # この基板で動く全プログ�
 | E32R28T | SPI 端子 IO27=SDA・IO18=SCL、拡張端子 3.3V・GND | `make flash-s028 PKG=./examples/joystick_check TAGS=e32r28t` |
 | ESP32-3248S035C | CN1：GND、3.3V、IO21=SDA、IO22=SCL（IO21 が GT911 の INT なら使えない） | `make flash-s035 PKG=./examples/joystick_check` |
 
-- 起動時のログ：I2C のスキャン結果、全レジスタの値、まとめ読み・リピートスタートでの読み出しが使えるか、1回の読み取り時間。そのあと画面にスティックの位置とボタンの状態を出し、変化をログに出す。
-- どのイベントが「押している間」を表すかは説明がないので、各ボタンを押す・押し続ける・離すをして、ログで確かめる。
+- 起動時のログ：I2C のスキャン結果、全レジスタの値、1回の読み取り時間。そのあと画面にスティックの位置とボタンの状態（押している間は緑）を出し、変化を時刻（ms）付きでログに出す。まとめ読み・リピートスタートでの読み出しは、スティックを斜め以外に倒すかボタンを押したときに比べる（中央で何も押していないと全レジスタが同じ値で、比べても分からないため）。
+
+ESP32-2432S028R（CN1、100kHz）で確かめたこと：
+
+| 項目 | 結果 |
+|---|---|
+| スキャン | 0x5A だけが見つかる |
+| 読み取り時間 | 1レジスタずつ（Arduino ライブラリと同じ）2.8ms、まとめ読み 1.2ms。まとめ読み・リピートスタートとも同じ値が返る（レジスタ番号は1バイトごとに進む） |
+| スティック | X・Y とも 0〜255、中央 128。右に倒すと X が増え、上に倒すと Y が増える。中央付近の小さな動きは 128 になる |
+| ボタンの名前 | 印字は上 Y、下 A、左 X、右 B。レジスタは A 0x21、Y 0x22、B 0x23、X 0x24、スティック押し込み 0x20。Arduino ライブラリの BUTTON_A〜D（0x22、0x23、0x21、0x24）は印字と合わない |
+| ボタンのイベント | 押している間 press down (0)、1秒押し続けると long press hold (6)。離すと press up (1)、0.3秒後に single click (3) か double click (4)（0.3秒より長く押したときは出ない）、そのあと none (8)。long press start (5) と press repeat (2) は 30ms ごとの読み取りでは見えなかった。押しているかどうかは `Event.Down()`（0、2、5、6） |
 
 ## ブラウザ（wasm）で動かす
 

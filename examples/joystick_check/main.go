@@ -9,14 +9,18 @@
 //   - the I2C devices found (the module is 0x5A);
 //   - every register read one at a time, as the module's Arduino library
 //     does;
-//   - whether block reads and repeated-start reads give the same values
-//     (keep the stick in the middle and the buttons up while it starts);
-//   - how long one reading of the whole module takes.
+//   - how long one reading of the whole module takes, one register at a
+//     time and in blocks.
 //
-// Then the screen shows the stick position and the event of each button,
-// and the log prints every change. Which events mean "held down" is not
-// documented: press, hold and release each button once and look at the
-// log.
+// Then the screen shows the stick position and the event of each button
+// (green while minijoy's Event.Down says it is held), and the log prints
+// every change with the time in milliseconds.
+//
+// Whether block reads and repeated-start reads work is checked while the
+// module is used: with the stick in the middle and no button down every
+// register holds the same value, so a module that does not move to the
+// next register after each byte would still look right. Move the stick
+// to a corner and press a button; the log says when it is clear.
 //
 //	make flash-s028 PKG=./examples/joystick_check                # ESP32-2432S028R
 //	make flash-s028 PKG=./examples/joystick_check TAGS=e32r28t   # E32R28T
@@ -69,22 +73,21 @@ func main() {
 		s.message("module not found at 0x5A - wiring? 3.3V?", red)
 		time.Sleep(2 * time.Second)
 	}
-	block := probe(j)
-	s.message("found 0x5A, "+mode(block)+" reads", green)
+	probe(j)
+	s.message("found 0x5A", green)
 
 	var st, last minijoy.State
 	last.X, last.Y = 128, 128
 	for b := range last.Buttons {
 		last.Buttons[b] = 255 // draw everything once
 	}
-	read := j.Read
-	if block {
-		read = j.ReadBlock
-	}
+	blockCheck := readCheck{name: "block"}
+	restartCheck := readCheck{name: "repeated start"}
 	var lastLog time.Time
+	t0 := time.Now()
 	errors := 0
 	for {
-		if err := read(&st); err != nil {
+		if err := j.Read(&st); err != nil {
 			errors++
 			if errors%30 == 1 {
 				println("read error:", err.Error(), "(", errors, "so far)")
@@ -93,10 +96,24 @@ func main() {
 			time.Sleep(100 * time.Millisecond)
 			continue
 		}
+		if !blockCheck.done() && distinct(st) {
+			var b minijoy.State
+			err := j.ReadBlock(&b)
+			if blockCheck.add(err == nil && same(st, b), b, st) {
+				s.message("block reads: "+blockCheck.verdict(), green)
+			}
+		}
+		if !restartCheck.done() && diff(st.X, st.Y) > 40 {
+			var r minijoy.State
+			var two [2]byte
+			err := j.ReadRegistersRestart(minijoy.RegX, two[:])
+			r.X, r.Y, r.Buttons = two[0], two[1], st.Buttons
+			restartCheck.add(err == nil && same(st, r), r, st)
+		}
 		for b := minijoy.A; b <= minijoy.OK; b++ {
 			if st.Buttons[b] != last.Buttons[b] {
 				if last.Buttons[b] != 255 {
-					println("button", b.String()+":", last.Buttons[b].String(), "->", st.Buttons[b].String(), "(", uint8(st.Buttons[b]), ")")
+					println(time.Since(t0).Milliseconds(), "button", b.String()+":", last.Buttons[b].String(), "->", st.Buttons[b].String(), "(", uint8(st.Buttons[b]), ")")
 				}
 				s.button(b, st.Buttons[b])
 			}
@@ -104,7 +121,7 @@ func main() {
 		if st.X != last.X || st.Y != last.Y {
 			s.stick(last.X, last.Y, st.X, st.Y)
 			if time.Since(lastLog) > 200*time.Millisecond && (diff(st.X, last.X) > 3 || diff(st.Y, last.Y) > 3) {
-				println("stick x", st.X, "y", st.Y)
+				println(time.Since(t0).Milliseconds(), "stick x", st.X, "y", st.Y)
 				lastLog = time.Now()
 			}
 		}
@@ -146,10 +163,8 @@ func found(j *minijoy.Device) bool {
 	return ok
 }
 
-// probe dumps the registers, checks block and repeated-start reads against
-// single reads, and times a whole reading. It returns whether block reads
-// can be used.
-func probe(j *minijoy.Device) bool {
+// probe dumps the registers and times a whole reading.
+func probe(j *minijoy.Device) {
 	var one [1]byte
 	println("registers, one at a time (as the Arduino library):")
 	for _, r := range []byte{0x10, 0x11, 0x12, 0x13, 0x20, 0x21, 0x22, 0x23, 0x24} {
@@ -160,22 +175,7 @@ func probe(j *minijoy.Device) bool {
 		println("  reg", "0x"+strconv.FormatUint(uint64(r), 16), "=", one[0])
 	}
 
-	var single, blk minijoy.State
-	errS := j.Read(&single)
-	errB := j.ReadBlock(&blk)
-	blockOK := errS == nil && errB == nil && same(single, blk)
-	println("single read: x", single.X, "y", single.Y, "buttons", events(single))
-	println("block read:  x", blk.X, "y", blk.Y, "buttons", events(blk), "->", okText(blockOK))
-
-	var two [2]byte
-	errR := j.ReadRegistersRestart(minijoy.RegX, two[:])
-	println("repeated start read of x,y:", two[0], two[1], "->",
-		okText(errR == nil && diff(two[0], single.X) <= 3 && diff(two[1], single.Y) <= 3))
-
 	for _, block := range []bool{false, true} {
-		if block && !blockOK {
-			continue
-		}
 		var s minijoy.State
 		start := time.Now()
 		for i := 0; i < 20; i++ {
@@ -187,24 +187,63 @@ func probe(j *minijoy.Device) bool {
 		}
 		println(mode(block), "read of the whole module:", time.Since(start).Microseconds()/20, "us")
 	}
-	return blockOK
+	println("block and repeated-start reads are checked when the stick is off the diagonal or a button is down")
 }
 
-// same compares two readings taken one after the other (the stick may move
-// a little between them).
-func same(a, b minijoy.State) bool {
-	return diff(a.X, b.X) <= 3 && diff(a.Y, b.Y) <= 3 && a.Buttons == b.Buttons
-}
-
-func okText(ok bool) string {
-	if ok {
-		return "same as single reads"
+// distinct reports whether the registers hold different values, so that a
+// read that stays on the first register would give a different result.
+func distinct(s minijoy.State) bool {
+	if diff(s.X, s.Y) > 40 {
+		return true
 	}
-	return "DIFFERENT (or error): not usable"
+	for _, e := range s.Buttons {
+		if e != s.Buttons[0] {
+			return true
+		}
+	}
+	return false
 }
 
-func events(s minijoy.State) string {
-	t := ""
+// same compares two readings taken a few milliseconds apart (the stick may
+// move a little between them).
+func same(a, b minijoy.State) bool {
+	return diff(a.X, b.X) <= 10 && diff(a.Y, b.Y) <= 10 && a.Buttons == b.Buttons
+}
+
+// readCheck compares another way of reading with single reads until the
+// answer is clear: 5 times the same, or 3 times different.
+type readCheck struct {
+	name    string
+	ok, bad int
+}
+
+func (c *readCheck) done() bool { return c.ok >= 5 || c.bad >= 3 }
+
+func (c *readCheck) verdict() string {
+	if c.ok >= 5 {
+		return "work"
+	}
+	return "do NOT work"
+}
+
+// add records one comparison and reports whether it settled the answer.
+func (c *readCheck) add(same bool, got, want minijoy.State) bool {
+	if same {
+		c.ok++
+	} else {
+		c.bad++
+		println(c.name, "read differs:", text(got))
+		println("  single reads:", text(want))
+	}
+	if c.done() {
+		println(c.name, "reads", c.verdict(), "(", c.ok, "same,", c.bad, "different )")
+		return true
+	}
+	return false
+}
+
+func text(s minijoy.State) string {
+	t := "x " + strconv.Itoa(int(s.X)) + " y " + strconv.Itoa(int(s.Y))
 	for b := minijoy.A; b <= minijoy.OK; b++ {
 		t += " " + b.String() + "=" + strconv.Itoa(int(s.Buttons[b]))
 	}
@@ -247,8 +286,9 @@ func (s *screen) cross() {
 	s.d.FillRectangle(s.bx+s.bs/2, s.by, 1, s.bs, line)
 }
 
+// pos is the dot's position for a reading: Y grows upwards on the module.
 func (s *screen) pos(x, y uint8) (int16, int16) {
-	return s.bx + int16(x)*(s.bs-1)/255, s.by + int16(y)*(s.bs-1)/255
+	return s.bx + int16(x)*(s.bs-1)/255, s.by + int16(255-y)*(s.bs-1)/255
 }
 
 // stick moves the dot and rewrites the numbers.
@@ -285,22 +325,12 @@ func (s *screen) fillInBox(x, y, w, h int16, c color.RGBA) {
 	}
 }
 
-// held guesses which events mean that the button is down (not documented;
-// the log shows what the module really reports).
-func held(e minijoy.Event) bool {
-	switch e {
-	case minijoy.PressDown, minijoy.PressRepeat, minijoy.LongPressStart, minijoy.LongPressHold:
-		return true
-	}
-	return false
-}
-
 func (s *screen) button(b minijoy.Button, e minijoy.Event) {
 	d := s.d
 	y := 76 + int16(b)*24
 	d.FillRectangle(s.tx, y, s.w-s.tx, 22, bg)
 	c := box
-	if held(e) {
+	if e.Down() {
 		c = green
 	}
 	d.FillRectangle(s.tx, y+2, 18, 18, c)

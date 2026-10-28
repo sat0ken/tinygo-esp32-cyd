@@ -36,17 +36,17 @@ func newModule(autoInc bool) *module {
 	m := &module{autoInc: autoInc}
 	m.regs[RegX], m.regs[RegY] = 200, 30
 	m.regs[0x20] = byte(NoPress)       // OK
-	m.regs[0x21] = byte(DoubleClick)   // C
-	m.regs[0x22] = byte(PressDown)     // A
+	m.regs[0x21] = byte(DoubleClick)   // A
+	m.regs[0x22] = byte(PressDown)     // Y
 	m.regs[0x23] = byte(LongPressHold) // B
-	m.regs[0x24] = byte(SingleClick)   // D
+	m.regs[0x24] = byte(SingleClick)   // X
 	return m
 }
 
 func check(t *testing.T, s State, what string) {
 	t.Helper()
 	want := State{X: 200, Y: 30, Buttons: [numButtons]Event{
-		A: PressDown, B: LongPressHold, C: DoubleClick, D: SingleClick, OK: NoPress,
+		A: DoubleClick, B: LongPressHold, X: SingleClick, Y: PressDown, OK: NoPress,
 	}}
 	if s != want {
 		t.Errorf("%s: %+v, want %+v", what, s, want)
@@ -88,8 +88,17 @@ func TestNotThere(t *testing.T) {
 	}
 }
 
+func TestDown(t *testing.T) {
+	for e := Event(0); e <= NoPress; e++ {
+		want := e == PressDown || e == PressRepeat || e == LongPressStart || e == LongPressHold
+		if e.Down() != want {
+			t.Errorf("%v.Down() = %v", e, e.Down())
+		}
+	}
+}
+
 func TestNames(t *testing.T) {
-	if A.String() != "A" || OK.String() != "OK" || PressDown.String() != "press down" ||
+	if A.String() != "A" || Y.String() != "Y" || OK.String() != "OK" || PressDown.String() != "press down" ||
 		NoPress.String() != "none" || Event(200).String() != "?" {
 		t.Error("names")
 	}

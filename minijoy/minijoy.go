@@ -1,12 +1,17 @@
 // Package minijoy reads the nulllab / emakefun mini joystick module
 // (https://github.com/nulllaborg/mini-joystick-module): one joystick with
-// a push button and four buttons A-D, read by a CH32V003 that answers on
-// I2C at address 0x5A.
+// a push button and four buttons, read by a CH32V003 that answers on I2C
+// at address 0x5A. The buttons are named as printed on the module: Y at
+// the top, A at the bottom, X on the left, B on the right.
 //
 // The protocol comes from the module's Arduino library (JoystickHandle):
 // write the register number in one transaction, then read the value in a
-// second one. Registers: 0x10 X, 0x11 Y (0..255, 128 in the middle),
-// 0x20..0x24 the button events of OK (stick press), C, A, B, D.
+// second one. Registers: 0x10 X, 0x11 Y (0..255, 128 in the middle; X
+// grows to the right and Y upwards, and small movements read 128),
+// 0x20..0x24 the button events of OK (stick press), A, Y, B, X. The
+// firmware also moves to the next register after each byte, so ReadBlock
+// reads everything in two block reads (checked on the module with
+// examples/joystick_check: 1.2ms instead of 2.8ms at 100kHz).
 //
 // Power the module with 3.3V when it is connected to an ESP32: its I2C
 // lines are pulled up to its supply (4.7k to VCC, no regulator), so a 5V
@@ -35,23 +40,29 @@ const (
 type Button uint8
 
 const (
-	A Button = iota
-	B
-	C
-	D
-	OK // pressing the joystick
+	A  Button = iota // bottom
+	B                // right
+	X                // left
+	Y                // top
+	OK               // pressing the joystick
 	numButtons
 )
 
-// buttonReg is the register of each button (JoystickHandle.h).
-var buttonReg = [numButtons]byte{A: 0x22, B: 0x23, C: 0x21, D: 0x24, OK: 0x20}
+// buttonReg is the register of each button, checked by pressing each one.
+// The Arduino library calls them differently (JoystickHandle.h: BUTTON_A
+// 0x22, BUTTON_B 0x23, BUTTON_C 0x21, BUTTON_D 0x24), which does not match
+// the letters printed on the module.
+var buttonReg = [numButtons]byte{A: 0x21, B: 0x23, X: 0x24, Y: 0x22, OK: 0x20}
 
-var buttonNames = [numButtons]string{"A", "B", "C", "D", "OK"}
+var buttonNames = [numButtons]string{"A", "B", "X", "Y", "OK"}
 
 func (b Button) String() string { return buttonNames[b] }
 
 // Event is the state the module reports for a button (the event names of
-// its firmware's button library).
+// its firmware's button library). On the module a button reads press down
+// while it is held and long press hold once it has been held for 1s; after
+// the release it reads press up, then single click or double click 0.3s
+// later (only after presses shorter than about 0.3s), then none.
 type Event uint8
 
 const (
@@ -72,6 +83,16 @@ var eventNames = [...]string{
 	7: "?", NoPress: "none",
 }
 
+// Down reports whether the button is held: press down, press repeat and
+// the long press events are reported only while it is held.
+func (e Event) Down() bool {
+	switch e {
+	case PressDown, PressRepeat, LongPressStart, LongPressHold:
+		return true
+	}
+	return false
+}
+
 func (e Event) String() string {
 	if int(e) < len(eventNames) {
 		return eventNames[e]
@@ -79,7 +100,8 @@ func (e Event) String() string {
 	return "?"
 }
 
-// State is one reading of the whole module.
+// State is one reading of the whole module. X grows to the right and Y
+// upwards (screen coordinates go downwards: use 255-Y).
 type State struct {
 	X, Y    uint8
 	Buttons [numButtons]Event
@@ -136,8 +158,7 @@ func (d *Device) Read(s *State) error {
 }
 
 // ReadBlock reads the same in two block reads (X and Y, then the five
-// button registers), which only works if the module's firmware moves to
-// the next register after each byte. examples/joystick_check tells.
+// button registers): 4 I2C transactions.
 func (d *Device) ReadBlock(s *State) error {
 	if err := d.ReadRegisters(RegX, d.r[:2]); err != nil {
 		return err

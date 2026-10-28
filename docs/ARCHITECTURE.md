@@ -70,7 +70,7 @@ ESP32-4827S043（ESP32-S3 + 4.3インチ 480×272 RGB 液晶）を TinyGo で動
 | [board/s035/](../board/s035/s035.go)・[gt911/](../gt911/gt911.go)・[viewport/](../viewport/viewport.go) | ESP32-3248S035C 用（[15章](#15-esp32-3248s035c35インチspi-液晶)） | 実機（ドライバはホストでもテスト） |
 | [board/s028/](../board/s028/s028.go) | ESP32-2432S028R 用（[16章](#16-esp32-2432s028r28インチ320240)） | 全部 |
 | [internal/panelcheck/](../internal/panelcheck/panelcheck.go) | SPI 液晶基板の確認プログラム（s035_check・s028_check）の共通部分 | 実機 |
-| [minijoy/](../minijoy/minijoy.go) | I2C のミニジョイスティックモジュール（0x5A）のドライバ。確認は [joystick_check](../examples/joystick_check/main.go)（README） | 実機（ホストでもテスト） |
+| [minijoy/](../minijoy/minijoy.go) | I2C のミニジョイスティックモジュール（0x5A）のドライバ。ボタン名は基板の印字（A・B・X・Y、Arduino ライブラリの名前とは違う）。確認は [joystick_check](../examples/joystick_check/main.go)（README に実機での結果） | 実機（ホストでもテスト） |
 | [flashmap/](../flashmap/flashmap.go) | フラッシュの任意の領域を MMU でメモリとして読めるようにする | 実機 |
 | [slidepack/](../slidepack/slidepack.go) | 複数の全画面画像を1ファイルにまとめる形式 | 全部 |
 | [slideshow/](../slideshow/) | スライドショー本体（切り替え効果・キャプション・タッチ操作）と SD 用の読み込み | 全部 |
