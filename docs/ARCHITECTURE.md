@@ -25,6 +25,7 @@ ESP32-4827S043（ESP32-S3 + 4.3インチ 480×272 RGB 液晶）を TinyGo で動
 14. [未解決・注意事項](#14-未解決注意事項)
 15. [ESP32-3248S035C（3.5インチ・SPI 液晶）](#15-esp32-3248s035c35インチspi-液晶)
 16. [ESP32-2432S028R（2.8インチ・320×240）](#16-esp32-2432s028r28インチ320240)
+17. [PicoPad のゲームの移植（picopad、15）](#17-picopad-のゲームの移植picopad15)
 
 ---
 
@@ -800,7 +801,7 @@ ESP32（PSRAM なし）、ILI9341（240×320、SPI）、XPT2046（抵抗膜タ�
 | 液晶 | ST7796、480×320 | ILI9341、320×240（`spilcd.InitILI9341`） |
 | タッチ | GT911（I2C） | XPT2046（S043 と同じ [xpttouch](../xpttouch/xpttouch.go)、ピンは CLK 25・MOSI 32・MISO 39・CS 33・IRQ 36） |
 | `platform.Init()` | 中央の 480×272 の窓 | 画面全体の 320×240 |
-| 動くプログラム | 03、07〜12、cmd/app、cmd/games | s028_check、08〜12、cmd/app、cmd/games |
+| 動くプログラム | 03、07〜15、cmd/app、cmd/games | s028_check、08〜15、cmd/app、cmd/games |
 
 - 480×272 の窓には入らないので、ゲームとお絵描きアプリは画面の大きさから配置を選ぶ。各ゲームの `layout` 構造体と `layoutFor(w, h)`（`NewGame` が `d.Size()` で呼ぶ）が、480×272 以上なら元の値（ゴールデン画像は変わらない）、それより小さければ 320×240 用の値を返す。テストは両方の大きさで動かし、`TestLayout` などが画面からはみ出さないこと・押せる所が重ならないこと・文字が収まることを確かめる（320×240 のゴールデン画像は `*_small_*`）。[app](../app/app.go) は 480×272 未満ならデモを省いて紙・パレット・CLEAR だけにする（`app_small`）。
 - 320×240 の配置：数独は1マス 25px、オセロは1マス 25px（右の欄に 105px 残して「THINKING...」を1行に）、ポーカーとソリティアはカードを小さく（56×72、42×54）、ランチャーのタイルは 104px 幅（SOLITAIRE が太字で 99px）。長いメッセージは単語で折り返すか小さい字にする。
@@ -810,3 +811,73 @@ ESP32（PSRAM なし）、ILI9341（240×320、SPI）、XPT2046（抵抗膜タ�
 - 速さ（E32R28T、SPI 40MHz）：320×240 の全画面塗りつぶし 39ms（理論値 31ms）、文字 300 字 139ms。
 - LCDwiki の 2.8inch ESP32-32E Display（E32R28T）も同じピンなので同じターゲットで動く（違いは使っていない LED・アンプ・電池の端子だけ）。表示は両方の基板で確認済み。
 - 共通部分：タッチを読む前に未送信のランを送る `flushTouch`（[spilcd_esp32.go](../platform/spilcd_esp32.go)）、起動時の診断（[boot_esp32.go](../platform/boot_esp32.go)）。`make examples-s028` も `machine._UART0` の置き場所を確かめる（15章）。
+
+## 17. PicoPad のゲームの移植（picopad、15）
+
+PicoPad は RP2040 のゲーム機（320×240 の ST7789、十字キーと A・B・X・Y、PWM の音）。その C の SDK [PicoLibSDK](https://github.com/Panda381/PicoLibSDK) にはゲームのサンプルが付いている（`PicoPad/GAME/` の 19 本。作者の自作分は Unlicense。TINYGAME の 22 本は GPLv3 なのでこのリポジトリには入れない）。[picopad](../picopad/picopad.go) はそのゲームを Go に移すための SDK の代わりで、最初の移植がテトリス（[games/tetris](../games/tetris/tetris.go)、[15_tetris](../examples/15_tetris/main.go)）。
+
+### 方針
+
+- C のゲームは「自分のループで描いて `DispUpdate`、`WaitMs` で待って `KeyGet` でボタンを読む」作り。ほかのゲーム（`Update(dt)` を毎フレーム呼ばれる作り）に書き直すと C との対応が崩れるので、**ループはそのまま**にして、SDK の関数を同じ名前・同じ引数で `picopad.Console` のメソッドにした。C のグローバル変数はゲームの構造体のフィールド、関数はメソッドになる（`DispTile` → `dispTile`）。`Console` を埋め込むので、呼び出しは `g.DrawText(...)`・`g.KeyGet()` と C とほぼ同じ形。
+- 描画の関数は `lib_draw.c` の切り抜き（クリップ）を1行ずつ写した。色は RGB565 の `Color`（`COLOR(r,g,b)` は `picopad.RGB`、`COL_*` は `picopad.Col*`）。
+- 乱数は `lib_rand.c` と同じ 64bit の線形合同法。種は `New` の引数（PicoPad はリング発振器）。
+- `ResetToBootLoader`（PicoPad では SD カードのメニューに戻る）は `Run` から戻ること。音（`PLAYSOUND`）は今はコメント。
+
+### フレームバッファ：8bit のパレット番号
+
+PicoPad は 320×240×16bit（150KB）のフレームバッファに描き、`DispUpdate` で変わった範囲（dirty rect）だけを液晶に送る。ゲームによってはフレームバッファを読んで当たり判定もする（INVADERS など）。ESP32（DRAM 192KB）で 16bit のまま持つと：
+
+| 方式 | 残るヒープ（S028、TinyGo 0.44 のビルドで `_heap_start` から計算） |
+|---|---|
+| 16bit（150KB） | 37,760 バイト（ここから main のスタック 8KB） |
+| 8bit パレット（75KB）＋ 8行のバッファ 2つ | 103,808 バイト |
+
+8bit にした。
+
+- **色の番号**：色は描かれたときに `index` で番号を探し、なければ空いている番号を付ける（`pal [256]uint16`）。256 色を超えたら一番近い色（赤・青の 5bit を緑の 6bit に合わせた距離）。画面全体を1色で塗ると（`DrawClear` や全画面の `DrawRect`）古い色はもう残っていないので、番号を全部空ける（`freePalette`）。テトリスは 80 色。PicoLibSDK のゲームの画像の色を数えると、ATOMS・CHESS・EGGS・FIFTEEN・INVADERS・LIFE・MAZE・PACMAN・RAPTOR・SOKOBAN・TETRIS・TRAIN は 256 色以内、ANTS・FLAPPY・GHOSTRAC・VEGASLOT・ZOOM・PICTOR は超える（近い色になる）。
+- **画像のパレット**：画像はそれぞれ自分のパレット（`TilesImg_Pal` など）を持つ。パレットの各色の番号の表（`palTable`、256 バイト）を最初に使ったときに作って覚える。パレットは文字列の定数なので、`unsafe.StringData` のポインタと長さで同じものと分かる。番号を全部空けたら（`gen` が変わる）表は作り直す。覚えるのは 32 個まで（ANTS が 18 個）。
+- **送る**：`DispUpdate` は dirty rect を 8 行ずつ、パレットで RGB565（ビッグエンディアン）に直して `DrawRGBBitmap8Async`（ESP32 は DMA。kart と同じ2つのバッファ）で送る。ほかの液晶では `DrawRGBBitmap8`。
+- **置き場所**：320×240 の画面は液晶の中央（480×272 なら 80, 16 から）。`New` が液晶全体を黒にする。
+- ESP32-4827S043 では、RGB 液晶のフレームバッファに直接描けば 75KB 要らないが、今は同じ作りにしている（起動直後のヒープ約 130KB のうち約 87KB を使う）。
+
+### ボタン
+
+- `picopad_key.c` の `KeyScan` を写した：5ms ごと（PicoPad の SysTick）に読み、押されたらバッファ（16個）に入れ、押し続けると 400ms 後から 100ms ごとに繰り返す。離して 50ms で離した扱い（`KeyGetRel` には離したことも入る。`KeyGet` は飛ばす）。`KeyPressed` は今押しているか。
+- ボタンは `hal.Pad`（ミニジョイスティック、ブラウザのキーボード）。スティックが十字キー、押し込みは A。ジョイスティックがなければタッチを使う：画面を 3×3 に分け、上・左・右・下の真ん中が十字キー、中央と右下が A、左下が B、右上が X、左上が Y（`touchButtons`）。
+- 最初に読んだときに押されていたボタンは、一度離すまで押したことにしない（ランチャーで押した A が残っていても、ゲームの最初の画面に効かない。`pad.Input` の最初の `Update` と同じ考え）。
+- ミニジョイスティックの読み取りは 1 回 1.2ms。`WaitMs` の間も 5ms ごとに読むので、待っている時間の中で済む。
+
+### 時間と待ち
+
+- `Time`（µs）・`WaitMs` は `Clock`（`Now`・`Sleep`）を使う。実機とブラウザは `time` パッケージ、テストは偽の時計（[internal/picotest](../internal/picotest/picotest.go)）。
+- `WaitMs` は 5ms ずつ眠りながらボタンを読む。
+- C のゲームは `while (KeyGet() == NOKEY) {}` のように**眠らずに待つ**ことがある。ブラウザではこれだと JS に戻らず、キーのイベントも画面の更新も来ない。そこで `KeyGet`・`KeyPressed`・`Time` は、ゲームが 20ms 眠っていなければ 1ms 眠る（`poll`）。実機では眠らずに待つループの中だけで起こる。
+- テストの偽の時計は `Now` のたびに 1µs 進む（ゲームが使う時間の代わり）。こうしないと眠らずに待つループが終わらない。`At` の関数は `Sleep` の中で呼ぶ：ゲームは `DispUpdate` のあとに眠るので、そのとき液晶とゲームの状態が合っている。
+- ブラウザで Playwright の `keyboard.press`（keydown と keyup が続けて来る）では、ゲームが読む前にキーが離れて押されなかったことになる。人のキー操作（数十 ms）は問題ない。確かめるときは keydown・60ms・keyup で押す。
+
+### 画像とフォント（tools/picoimg）
+
+- PicoLibSDK の画像は Windows のツール（PicoPadImg.exe）で BMP から C の配列（`img/*.cpp`）にしてある。RLE などの形式もそのツールで作るので、BMP からではなく **C の配列を読んで** Go の文字列定数にする（[tools/picoimg](../tools/picoimg/main.go)）。バイトは同じなので、描画の関数は PicoLibSDK と同じように読める。u16 の配列（パレット）はリトルエンディアンにする。配列の前の `// format: ...` のコメントも写す。
+- 文字列の中身は rodata（フラッシュ）に置かれる（romfont と同じ）。
+- フォントは `_font/font_bold_8x8.c`（256 文字 × 8 行、1 バイト 1 行。文字 `ch` の行 `i` は `font[i*256+ch]`）。
+- `go generate` は環境変数 `PICOLIBSDK`（PicoLibSDK を取ってきた場所）を使う：`PICOLIBSDK=~/PicoLibSDK go generate ./picopad ./games/tetris`。
+
+### テトリスの移植
+
+- C の `main.cpp`（約 1000 行）を関数ごとに写した。違いは：グローバル変数 → `Game` のフィールド、`u8`/`s8` の座標 → `int`、`DecNum` → `strconv.Itoa`、`PLAYSOUND` → コメント、`ResetToBootLoader` → `Run` から戻る。C の `Game()` は `play`、`NewGame()` は `newGame`（`Game` 型と紛らわしいので）。
+- 表（`BoardTemp`・`BrickTemp` など）は定数の配列の `var`。TinyGo がコンパイル時に作るので、起動時の初期化にはならない（15章の UART0 の件）。
+- 終わり方は C と同じ：ゲーム中の Y でゲームが終わってデモになり、デモで Y を押したままにすると `Run` から戻る（デモがボタンを読むのは1つのブロックの間に3回だけなので、短く押すとデモが終わるだけで、新しいゲームが始まる）。
+
+### テスト
+
+- [picopad_test.go](../picopad/picopad_test.go)：画像（8bit・4bit・透明色つき）と切り抜き、文字、256 色を超えたとき、`DrawClear` で番号が空くこと、dirty rect の送り方（帯ごと）、中央に置くこと、ボタン（繰り返し・離す・最初から押されている・タッチの 9 か所・眠らずに待つループ）、乱数。
+- [tetris_test.go](../games/tetris/tetris_test.go)：最初の画面のゴールデン画像（`tetris_start`。320×240 と、480×272 の中央の両方で同じ）、移動・回転・落下、デモ（ボタンを押さずに 120 秒：10 秒でデモになり、点と消した行が増える）、2 行消して次のレベル、ゲームオーバーで最高点が残ること、Y で `Run` から戻ること。画面の枠の中のブロックは、盤のタイルと 1 ピクセルずつ比べる（`checkField`）。
+- 元のゲームの画面写真（PicoLibSDK の `PicoPad/GAME/TETRIS/TETRIS.PNG`）と `tetris_start` を RGB565 で比べ、動かない部分（壁・枠・題字・統計のブロック）は全ピクセル同じだった。
+- ブラウザ（`make wasm PKG=./examples/15_tetris`）は headless Chromium と Playwright で、表示・A で開始・左右・回転・落下・B で一時停止を確かめた。実機は未確認。
+
+### ほかのゲームを移植するとき
+
+1. `PicoPad/GAME/<名前>/img/*.cpp` を tools/picoimg で `games/<名前>/` に変換する（音の `snd/*.cpp` は今は要らない）。
+2. `src/*.cpp` を関数ごとに Go のメソッドにする。グローバル変数は構造体のフィールド、表は `var` の配列か文字列。
+3. 足りない SDK の関数を picopad に足す。今あるのは `DrawPoint`・`DrawRect`・`DrawFrame(W)`・`DrawClear(Col)`・`DrawChar(Bg)`・`DrawText(Bg)`・`DrawImgPal`・`DrawImg4Pal`・`DrawBlitPal`・`DrawBlit4Pal`・`DispUpdate(All)`・`DispDirty*`・`Key*`・`Time`・`WaitMs`・`Rand*`（`RandU8`・`RandU16`・`RandU8Max`・`RandU16Max`・`RandShift`）。よく使われていてまだないのは `DrawImgRle`・`DrawImg4Rle`・`DrawBlit1Shadow`・`DrawRectShadow`（影：色を暗くするので、暗くした色にも番号を付ける）、`DrawText2`・`DrawTextW`（2 倍の文字）、ほかのフォント、`FrameBuf` を読む関数（パレット番号で返せば、ゲームの比較はそのまま動く）、`Mat2D` の回転描画（GHOSTRAC）、音。
+4. テストは偽の時計とボタンの台本（internal/picotest）で `Run` を動かし、`At` で画面と状態を確かめる。
