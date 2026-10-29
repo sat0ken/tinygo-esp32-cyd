@@ -801,7 +801,7 @@ ESP32（PSRAM なし）、ILI9341（240×320、SPI）、XPT2046（抵抗膜タ�
 | 液晶 | ST7796、480×320 | ILI9341、320×240（`spilcd.InitILI9341`） |
 | タッチ | GT911（I2C） | XPT2046（S043 と同じ [xpttouch](../xpttouch/xpttouch.go)、ピンは CLK 25・MOSI 32・MISO 39・CS 33・IRQ 36） |
 | `platform.Init()` | 中央の 480×272 の窓 | 画面全体の 320×240 |
-| 動くプログラム | 03、07〜16、cmd/app、cmd/games | s028_check、08〜16、cmd/app、cmd/games |
+| 動くプログラム | 03、07〜17、cmd/app、cmd/games | s028_check、08〜17、cmd/app、cmd/games |
 
 - 480×272 の窓には入らないので、ゲームとお絵描きアプリは画面の大きさから配置を選ぶ。各ゲームの `layout` 構造体と `layoutFor(w, h)`（`NewGame` が `d.Size()` で呼ぶ）が、480×272 以上なら元の値（ゴールデン画像は変わらない）、それより小さければ 320×240 用の値を返す。テストは両方の大きさで動かし、`TestLayout` などが画面からはみ出さないこと・押せる所が重ならないこと・文字が収まることを確かめる（320×240 のゴールデン画像は `*_small_*`）。[app](../app/app.go) は 480×272 未満ならデモを省いて紙・パレット・CLEAR だけにする（`app_small`）。
 - 320×240 の配置：数独は1マス 25px、オセロは1マス 25px（右の欄に 105px 残して「THINKING...」を1行に）、ポーカーとソリティアはカードを小さく（56×72、42×54）、ランチャーのタイルは 104px 幅（SOLITAIRE が太字で 99px）。長いメッセージは単語で折り返すか小さい字にする。
@@ -814,7 +814,7 @@ ESP32（PSRAM なし）、ILI9341（240×320、SPI）、XPT2046（抵抗膜タ�
 
 ## 17. PicoPad のゲームの移植（picopad、15）
 
-PicoPad は RP2040 のゲーム機（320×240 の ST7789、十字キーと A・B・X・Y、PWM の音）。その C の SDK [PicoLibSDK](https://github.com/Panda381/PicoLibSDK) にはゲームのサンプルが付いている（`PicoPad/GAME/` の 19 本。作者の自作分は Unlicense。TINYGAME の 22 本は GPLv3 なのでこのリポジトリには入れない）。[picopad](../picopad/picopad.go) はそのゲームを Go に移すための SDK の代わりで、移植したのはテトリス（[games/tetris](../games/tetris/tetris.go)、[15_tetris](../examples/15_tetris/main.go)）と迷路（[games/maze](../games/maze/maze.go)、[16_maze](../examples/16_maze/main.go)）。
+PicoPad は RP2040 のゲーム機（320×240 の ST7789、十字キーと A・B・X・Y、PWM の音）。その C の SDK [PicoLibSDK](https://github.com/Panda381/PicoLibSDK) にはゲームのサンプルが付いている（`PicoPad/GAME/` の 19 本。作者の自作分は Unlicense。TINYGAME の 22 本は GPLv3 なのでこのリポジトリには入れない）。[picopad](../picopad/picopad.go) はそのゲームを Go に移すための SDK の代わりで、移植したのはテトリス（[games/tetris](../games/tetris/tetris.go)、[15_tetris](../examples/15_tetris/main.go)）、迷路（[games/maze](../games/maze/maze.go)、[16_maze](../examples/16_maze/main.go)）、15 パズル（[games/fifteen](../games/fifteen/fifteen.go)、[17_fifteen](../examples/17_fifteen/main.go)）。
 
 ### 方針
 
@@ -860,7 +860,7 @@ PicoPad は 320×240×16bit（150KB）のフレームバッファに描き、`Di
 - PicoLibSDK の画像は Windows のツール（PicoPadImg.exe）で BMP から C の配列（`img/*.cpp`）にしてある。RLE などの形式もそのツールで作るので、BMP からではなく **C の配列を読んで** Go の文字列定数にする（[tools/picoimg](../tools/picoimg/main.go)）。バイトは同じなので、描画の関数は PicoLibSDK と同じように読める。u16 の配列（パレット）はリトルエンディアンにする。配列の前の `// format: ...` のコメントも写す。
 - 文字列の中身は rodata（フラッシュ）に置かれる（romfont と同じ）。
 - フォントは `_font/font_bold_8x8.c`（256 文字 × 8 行、1 バイト 1 行。文字 `ch` の行 `i` は `font[i*256+ch]`）。
-- `go generate` は環境変数 `PICOLIBSDK`（PicoLibSDK を取ってきた場所）を使う：`PICOLIBSDK=~/PicoLibSDK go generate ./picopad ./games/tetris ./games/maze`。
+- `go generate` は環境変数 `PICOLIBSDK`（PicoLibSDK を取ってきた場所）を使う：`PICOLIBSDK=~/PicoLibSDK go generate ./picopad ./games/...`。
 
 ### テトリスの移植
 
@@ -876,13 +876,22 @@ PicoPad は 320×240×16bit（150KB）のフレームバッファに描き、`Di
 - テストの偽の時計は `Now` 1回で 1µs 進むので、このループだと 1 秒に数千回描き直してテストが遅い。`picotest.Clock.Step` で1回に進む時間を変えられるようにして、迷路のテストは 100µs にした。
 - ボタンは離して 50ms で離した扱い（`KeyScan` と同じ）なので、テストで同じ方向を続けて押すときは 200ms あける（50ms 押して 50ms 離すだけだと、2回目が1回目の続きになる）。
 
+### 15 パズルの移植（17）
+
+- C の `main.cpp`（約 600 行）を関数ごとに写した。タイルを1つ動かす `shift` は、「揃える組のタイルのうち場所が違う数」（`posErr`）と「各タイルの場所からの距離」（`dist`）を差分で更新する。テストでは、ランダムに動かすたびに `calcPos`（全部数え直す）と一致することを確かめる。
+- X の解き方（`solver`）は C と同じ：タイルを組（1、2、5、6、3 と 4、7 と 8、9 と 13、10 と 14、残り）に分けて順に揃える。組ごとに、まず「近づける」探索（`preSolve1`、距離が一番小さくなる手順）を指し、次に「揃える」探索（`solve1`、深さを1ずつ増やす）。見つからなければ両方の深さを増やしてやり直す（C の `goto PRE_AGAIN` は Go のループ）。揃った組のタイルは動かさない（`locked`）。
+- 探索の1段は、C では上下左右の4つを書き並べてある。Go では `try` にまとめたが、次の段を関数の値（`g.solve1` など）で渡すと TinyGo では呼ぶたびにヒープを使うことがある（探索は数百万回呼ぶ）ので、フラグで呼び分ける。
+- 探索の間は SDK の関数を呼ばないので、ボタンも画面も止まる（PicoPad と同じ）。ブラウザでも同じで、テストの種では X から 30 秒以内に揃った。
+- 矢印は「穴の隣のタイルをその向きに動かす」（RIGHT は穴の左のタイルを右へ）。C のとおり。
+
 ### テスト
 
 - [picopad_test.go](../picopad/picopad_test.go)：画像（8bit・4bit・透明色つき）と切り抜き、文字、256 色を超えたとき、`DrawClear` で番号が空くこと、dirty rect の送り方（帯ごと）、中央に置くこと、ボタン（繰り返し・離す・最初から押されている・タッチの 9 か所・眠らずに待つループ）、乱数。
 - [tetris_test.go](../games/tetris/tetris_test.go)：最初の画面のゴールデン画像（`tetris_start`。320×240 と、480×272 の中央の両方で同じ）、移動・回転・落下、デモ（ボタンを押さずに 120 秒：10 秒でデモになり、点と消した行が増える）、2 行消して次のレベル、ゲームオーバーで最高点が残ること、Y で `Run` から戻ること。画面の枠の中のブロックは、盤のタイルと 1 ピクセルずつ比べる（`checkField`）。
 - [maze_test.go](../games/maze/maze_test.go)：最初の画面（`maze_start`。顔とその周りだけ見える）、20 個の種で迷路の石が全部壁になり通路が全部つながること、最短の道をボタンで進んで出口に着き、迷路全体が見えて（`maze_solved`）ボタンで次の迷路になること、A で出口が見えて元に戻ること。
-- 元のゲームの画面写真（PicoLibSDK の `PicoPad/GAME/TETRIS/TETRIS.PNG`）と `tetris_start` を RGB565 で比べ、動かない部分（壁・枠・題字・統計のブロック）は全ピクセル同じだった。迷路の `MAZE.PNG`（途中まで進んだ迷路）は、左上 4 ピクセルずらした 8×8 のマス 1,131 個がどれも、こちらで描いたタイル 17 種のどれかと全ピクセル同じだった（4bit の画像の読み方と描く位置が同じ）。
-- ブラウザ（`make wasm PKG=./examples/15_tetris`・`16_maze`）は headless Chromium と Playwright で確かめた。テトリスは表示・A で開始・左右・回転・落下・B で一時停止、迷路は矢印で進む・壁で止まる・A で出口が見えて戻る。実機は未確認。
+- [fifteen_test.go](../games/fifteen/fifteen_test.go)：最初の画面（`fifteen_start`。混ぜた盤）、`shift` の差分の更新と `calcPos` が合うこと（20 通り × 200 手）、矢印でタイルが C のとおりに動くこと（端では動かない）、X で最後まで解けて（`fifteen_solved`。ゲームの時間で約 23 秒）ボタンで次のゲームになること。
+- 元のゲームの画面写真（PicoLibSDK の `PicoPad/GAME/TETRIS/TETRIS.PNG`）と `tetris_start` を RGB565 で比べ、動かない部分（壁・枠・題字・統計のブロック）は全ピクセル同じだった。迷路の `MAZE.PNG`（途中まで進んだ迷路）は、左上 4 ピクセルずらした 8×8 のマス 1,131 個がどれも、こちらで描いたタイル 17 種のどれかと全ピクセル同じだった（4bit の画像の読み方と描く位置が同じ）。15 パズルの `FIFTEEN.PNG` も、48×48 のマス 16 個がどれもタイル 18 種のどれかと全ピクセル同じで、盤の外は黒。
+- ブラウザ（`make wasm PKG=./examples/15_tetris`・`16_maze`・`17_fifteen`）は headless Chromium と Playwright で確かめた。テトリスは表示・A で開始・左右・回転・落下・B で一時停止、迷路は矢印で進む・壁で止まる・A で出口が見えて戻る、15 パズルは矢印でタイルが動く・X で最後まで解ける。実機は未確認。
 
 ### ほかのゲームを移植するとき
 
