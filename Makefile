@@ -20,7 +20,7 @@ S035_PKGS := ./examples/s035_check ./examples/03_tinydraw ./examples/07_breakout
 	./examples/19_tvtennis ./examples/20_atoms ./examples/21_chess ./examples/22_eggs \
 	./examples/23_train ./examples/24_picoinvaders ./examples/25_pacman ./examples/26_sokoban \
 	./examples/27_vegaslot ./examples/28_raptor ./examples/29_ants ./examples/30_ghostrac \
-	./examples/31_fifteen2 ./examples/32_pictor
+	./examples/31_fifteen2 ./examples/32_pictor ./examples/33_zoom
 
 # ESP32-2432S028R (2.8" ILI9341 320x240, XPT2046 touch): only the programs
 # that adapt to the screen size (the games need 480x272).
@@ -32,7 +32,7 @@ S028_PKGS := ./examples/s028_check ./examples/08_invaders ./examples/09_sudoku \
 	./examples/19_tvtennis ./examples/20_atoms ./examples/21_chess ./examples/22_eggs \
 	./examples/23_train ./examples/24_picoinvaders ./examples/25_pacman ./examples/26_sokoban \
 	./examples/27_vegaslot ./examples/28_raptor ./examples/29_ants ./examples/30_ghostrac \
-	./examples/31_fifteen2 ./examples/32_pictor
+	./examples/31_fifteen2 ./examples/32_pictor ./examples/33_zoom
 
 .PHONY: flash flash-noerase flash-slides flash-s035 flash-s028 monitor build examples examples-s035 examples-s028 wasm serve test test-browser update-golden slides clean
 
