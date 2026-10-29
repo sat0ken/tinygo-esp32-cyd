@@ -1,12 +1,13 @@
-// Package othello is othello (reversi) against the CPU for a 480x272 touch
-// screen. It depends only on hal: examples/10_othello runs it alone,
-// cmd/games from a launcher.
+// Package othello is othello (reversi) against the CPU for a 480x272 or
+// 320x240 touch screen. It depends only on hal: examples/10_othello runs it
+// alone, cmd/games from a launcher.
 package othello
 
 import (
 	"image/color"
 	"math/bits"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/sat0ken/tinygo-cyd/hal"
@@ -16,15 +17,8 @@ import (
 	"tinygo.org/x/tinyfont"
 )
 
-// Layout for 480x272: the board on the left, the status on the right.
 const (
-	boardX = 8
-	boardY = 8
-	cellSz = 32 // the lines are on the 32-pixel grid, the inside is 31x31
-	stoneR = 13
-	dotR   = 3
-
-	panelX = 282
+	dotR = 3
 
 	tapGap    = 0.15 // seconds; ignore taps closer than this (resistive touch bounces)
 	flipStep  = 0.06 // seconds between two stones turning over
@@ -51,6 +45,80 @@ var (
 type rect struct{ x, y, w, h int16 }
 
 func (r rect) has(x, y int16) bool { return x >= r.x && x < r.x+r.w && y >= r.y && y < r.y+r.h }
+
+// layout is where everything is: the board on the left, the status on
+// the right.
+type layout struct {
+	boardX, boardY int16
+	cellSz         int16 // the lines are on this grid, the inside of a square is one less
+	stoneR         int16
+
+	panelX, panelW int16
+	small          bool // the counts side by side, the message wrapped
+	undo, new      rect
+
+	titleBase, playBase int16 // the menu's title and "YOU PLAY"
+	color0              rect  // the BLACK button; WHITE follows
+	colorStep           int16
+	colorText           int16 // x of the name in a colour button
+	levelBase           int16 // "CPU LEVEL - TAP TO START"
+	level0              rect  // the first level button
+	levelStep           int16
+	levelFont           tinyfont.Fonter
+}
+
+// layoutFor returns the layout for a w x h screen: the 480x272 one, or the
+// 320x240 one (ESP32-2432S028R) on smaller screens.
+func layoutFor(w, h int16) layout {
+	if w >= 480 && h >= 272 {
+		const panelX = 282
+		return layout{
+			boardX: 8, boardY: 8, cellSz: 32, stoneR: 13,
+			panelX: panelX, panelW: w - panelX,
+			undo: rect{panelX, 214, 88, 40}, new: rect{panelX + 98, 214, 88, 40},
+			titleBase: 56, playBase: 92,
+			color0: rect{90, 100, 140, 44}, colorStep: 160, colorText: 44,
+			levelBase: 180,
+			level0:    rect{40, 190, 120, 52}, levelStep: 140,
+			levelFont: &freesans.Bold12pt7b,
+		}
+	}
+	// 25-pixel squares leave 105 pixels for the panel: "THINKING..." fits.
+	const panelX = 211
+	return layout{
+		boardX: 4, boardY: (h - 201) / 2, cellSz: 25, stoneR: 10,
+		panelX: panelX, panelW: w - panelX - 4, small: true,
+		undo: rect{panelX, h - 44, 50, 40}, new: rect{panelX + 55, h - 44, 50, 40},
+		titleBase: 72, playBase: 90, // the title clears the "< GAMES" button
+		color0: rect{14, 98, 142, 40}, colorStep: 150, colorText: 40,
+		levelBase: 160,
+		level0:    rect{12, 170, 92, 50}, levelStep: 102,
+		levelFont: &freesans.Bold9pt7b,
+	}
+}
+
+func (l *layout) squareRect(sq int) rect {
+	r, c := int16(sq/8), int16(sq%8)
+	return rect{l.boardX + c*l.cellSz + 1, l.boardY + r*l.cellSz + 1, l.cellSz - 1, l.cellSz - 1}
+}
+
+func (l *layout) boardRect() rect {
+	return rect{l.boardX, l.boardY, 8*l.cellSz + 1, 8*l.cellSz + 1}
+}
+
+func (l *layout) colorButton(k int) rect { // 0 = black, 1 = white
+	r := l.color0
+	r.x += int16(k) * l.colorStep
+	return r
+}
+
+func (l *layout) levelButton(k int) rect {
+	r := l.level0
+	r.x += int16(k) * l.levelStep
+	return r
+}
+
+func backButton() rect { return rect{8, 8, 84, 28} }
 
 type phase int
 
@@ -88,6 +156,7 @@ type snapshot struct {
 type Game struct {
 	d hal.Display
 	t hal.Touch
+	l layout
 
 	// Now is the clock used to measure the CPU's thinking time.
 	Now func() time.Time
@@ -123,8 +192,8 @@ func NewGame(d hal.Display, t hal.Touch, seed uint32) *Game {
 	if seed == 0 {
 		seed = 1
 	}
-	g := &Game{d: d, t: t, Now: time.Now, humanBlack: true, level: 1, lastTap: -1, rng: seed}
-	return g
+	w, h := d.Size()
+	return &Game{d: d, t: t, l: layoutFor(w, h), Now: time.Now, humanBlack: true, level: 1, lastTap: -1, rng: seed}
 }
 
 func (g *Game) noise(n int) int {
@@ -133,21 +202,6 @@ func (g *Game) noise(n int) int {
 	g.rng ^= g.rng << 5
 	return int(g.rng%uint32(2*n+1)) - n
 }
-
-// ---- geometry ----
-
-func squareRect(sq int) rect {
-	r, c := sq/8, sq%8
-	return rect{boardX + int16(c)*cellSz + 1, boardY + int16(r)*cellSz + 1, cellSz - 1, cellSz - 1}
-}
-
-func boardRect() rect { return rect{boardX, boardY, 8*cellSz + 1, 8*cellSz + 1} }
-
-func colorButton(k int) rect { return rect{90 + int16(k)*160, 100, 140, 44} } // 0 = black, 1 = white
-func levelButton(k int) rect { return rect{40 + int16(k)*140, 190, 120, 52} }
-func backButton() rect       { return rect{8, 8, 84, 28} }
-func undoButton() rect       { return rect{panelX, 214, 88, 40} }
-func newButton() rect        { return rect{panelX + 98, 214, 88, 40} }
 
 // ---- drawing helpers ----
 
@@ -160,11 +214,32 @@ func (g *Game) textCentered(r rect, font tinyfont.Fonter, s string, c color.RGBA
 
 func (g *Game) stone(cx, cy int16, black bool) {
 	if black {
-		tinydraw.FilledCircle(g.d, cx, cy, stoneR, blackStone)
-		tinydraw.Circle(g.d, cx, cy, stoneR, rimColor)
+		tinydraw.FilledCircle(g.d, cx, cy, g.l.stoneR, blackStone)
+		tinydraw.Circle(g.d, cx, cy, g.l.stoneR, rimColor)
 	} else {
-		tinydraw.FilledCircle(g.d, cx, cy, stoneR, whiteStone)
+		tinydraw.FilledCircle(g.d, cx, cy, g.l.stoneR, whiteStone)
 	}
+}
+
+// writeLines writes s at (x, y) in lines no wider than w, broken at sep,
+// and returns the baseline of the next line.
+func (g *Game) writeLines(x, y, w int16, font tinyfont.Fonter, s, sep string, c color.RGBA) int16 {
+	line := ""
+	for _, word := range strings.Split(s, sep) {
+		if line == "" {
+			line = word
+			continue
+		}
+		if _, lw := tinyfont.LineWidth(font, line+sep+word); int16(lw) <= w {
+			line += sep + word
+			continue
+		}
+		tinyfont.WriteLine(g.d, font, x, y, line, c)
+		y += int16(font.GetYAdvance())
+		line = word
+	}
+	tinyfont.WriteLine(g.d, font, x, y, line, c)
+	return y + int16(font.GetYAdvance())
 }
 
 // ---- menu ----
@@ -174,23 +249,24 @@ func (g *Game) DrawMenu() {
 	g.phase = menu
 	w, h := g.d.Size()
 	g.fill(rect{0, 0, w, h}, bgColor)
-	g.textCentered(rect{0, 0, w, 0}, &freesans.Bold24pt7b, "OTHELLO", textColor, 56)
-	g.textCentered(rect{0, 0, w, 0}, &proggy.TinySZ8pt7b, "YOU PLAY", dimText, 92)
+	l := &g.l
+	g.textCentered(rect{0, 0, w, 0}, &freesans.Bold24pt7b, "OTHELLO", textColor, l.titleBase)
+	g.textCentered(rect{0, 0, w, 0}, &proggy.TinySZ8pt7b, "YOU PLAY", dimText, l.playBase)
 	for k, name := range []string{"BLACK (1st)", "WHITE (2nd)"} {
-		r := colorButton(k)
+		r := l.colorButton(k)
 		c := btnColor
 		if (k == 0) == g.humanBlack {
 			c = selBtnColor
 		}
 		g.fill(r, c)
-		g.stone(r.x+24, r.y+r.h/2, k == 0)
-		tinyfont.WriteLine(g.d, &proggy.TinySZ8pt7b, r.x+44, r.y+26, name, textColor)
+		g.stone(r.x+l.colorText-20, r.y+r.h/2, k == 0)
+		tinyfont.WriteLine(g.d, &proggy.TinySZ8pt7b, r.x+l.colorText, r.y+r.h/2+4, name, textColor)
 	}
-	g.textCentered(rect{0, 0, w, 0}, &proggy.TinySZ8pt7b, "CPU LEVEL - TAP TO START", dimText, 180)
+	g.textCentered(rect{0, 0, w, 0}, &proggy.TinySZ8pt7b, "CPU LEVEL - TAP TO START", dimText, l.levelBase)
 	for k, lv := range levels {
-		r := levelButton(k)
+		r := l.levelButton(k)
 		g.fill(r, levelColors[k])
-		g.textCentered(r, &freesans.Bold12pt7b, lv.Name, textColor, 34)
+		g.textCentered(r, l.levelFont, lv.Name, textColor, (r.h+int16(capHeight(l.levelFont)))/2)
 	}
 	if g.OnExit != nil {
 		r := backButton()
@@ -206,14 +282,14 @@ func (g *Game) tapMenu(x, y int16) {
 		return
 	}
 	for k := 0; k < 2; k++ {
-		if colorButton(k).has(x, y) {
+		if g.l.colorButton(k).has(x, y) {
 			g.humanBlack = k == 0
 			g.DrawMenu()
 			return
 		}
 	}
 	for k := range levels {
-		if levelButton(k).has(x, y) {
+		if g.l.levelButton(k).has(x, y) {
 			g.level = k
 			g.start()
 			return
@@ -338,15 +414,15 @@ func (g *Game) Update(dt float32) {
 	}
 	if tap {
 		switch {
-		case newButton().has(x, y):
+		case g.l.new.has(x, y):
 			g.DrawMenu()
 			return
-		case undoButton().has(x, y) && (g.phase == humanTurn || g.phase == gameOver):
+		case g.l.undo.has(x, y) && (g.phase == humanTurn || g.phase == gameOver):
 			g.undo()
 			return
-		case g.phase == humanTurn && boardRect().has(x, y):
-			c := int((x - boardX) / cellSz)
-			r := int((y - boardY) / cellSz)
+		case g.phase == humanTurn && g.l.boardRect().has(x, y):
+			c := int((x - g.l.boardX) / g.l.cellSz)
+			r := int((y - g.l.boardY) / g.l.cellSz)
 			if sq := r*8 + c; r < 8 && c < 8 && g.pos.Moves()&(1<<sq) != 0 {
 				g.history = append(g.history, snapshot{g.pos, g.blackMove, g.last})
 				g.play(sq)
@@ -409,7 +485,7 @@ func (g *Game) look(sq int) sqLook {
 
 func (g *Game) drawSquare(sq int) {
 	l := g.look(sq)
-	r := squareRect(sq)
+	r := g.l.squareRect(sq)
 	g.fill(r, boardColor)
 	cx, cy := r.x+r.w/2, r.y+r.h/2
 	switch l.stone {
@@ -429,15 +505,15 @@ func (g *Game) drawSquare(sq int) {
 func (g *Game) drawAll() {
 	w, h := g.d.Size()
 	g.fill(rect{0, 0, w, h}, bgColor)
-	br := boardRect()
+	br, cs := g.l.boardRect(), g.l.cellSz
 	g.fill(br, boardColor)
 	for i := int16(0); i <= 8; i++ {
-		g.fill(rect{br.x + i*cellSz, br.y, 1, br.h}, lineColor)
-		g.fill(rect{br.x, br.y + i*cellSz, br.w, 1}, lineColor)
+		g.fill(rect{br.x + i*cs, br.y, 1, br.h}, lineColor)
+		g.fill(rect{br.x, br.y + i*cs, br.w, 1}, lineColor)
 	}
 	// Small dots at the four classic points.
 	for _, p := range [][2]int16{{2, 2}, {6, 2}, {2, 6}, {6, 6}} {
-		tinydraw.FilledCircle(g.d, br.x+p[0]*cellSz, br.y+p[1]*cellSz, 2, lineColor)
+		tinydraw.FilledCircle(g.d, br.x+p[0]*cs, br.y+p[1]*cs, 2, lineColor)
 	}
 	for sq := range g.drawn {
 		g.drawn[sq] = sqLook{stone: -1} // force a redraw
@@ -446,9 +522,9 @@ func (g *Game) drawAll() {
 	for _, b := range []struct {
 		r    rect
 		name string
-	}{{undoButton(), "UNDO"}, {newButton(), "NEW"}} {
+	}{{g.l.undo, "UNDO"}, {g.l.new, "NEW"}} {
 		g.fill(b.r, btnColor)
-		g.textCentered(b.r, &proggy.TinySZ8pt7b, b.name, textColor, 24)
+		g.textCentered(b.r, &proggy.TinySZ8pt7b, b.name, textColor, b.r.h/2+4)
 	}
 	g.refresh()
 }
@@ -477,7 +553,8 @@ func (g *Game) drawPanel() {
 		return
 	}
 	g.drawnPanel = state
-	g.fill(rect{panelX, 0, 480 - panelX, 206}, bgColor)
+	l := &g.l
+	g.fill(rect{l.panelX, 0, l.panelW, l.undo.y - 8}, bgColor)
 
 	// Stone counts; the side to move is underlined.
 	you, cpu := "YOU", "CPU"
@@ -490,7 +567,17 @@ func (g *Game) drawPanel() {
 		n     int
 		name  string
 	}{{true, b, nameB}, {false, w, nameW}} {
-		x := panelX + int16(k)*98
+		if l.small {
+			x := l.panelX + int16(k)*55
+			g.stone(x+10, 22, side.black)
+			tinyfont.WriteLine(g.d, &freesans.Bold12pt7b, x+23, 30, strconv.Itoa(side.n), textColor)
+			tinyfont.WriteLine(g.d, &proggy.TinySZ8pt7b, x+2, 48, side.name, dimText)
+			if side.black == g.blackMove && g.phase != gameOver {
+				g.fill(rect{x, 52, 50, 3}, turnColor)
+			}
+			continue
+		}
+		x := l.panelX + int16(k)*98
 		g.stone(x+16, 36, side.black)
 		tinyfont.WriteLine(g.d, &freesans.Bold18pt7b, x+36, 48, strconv.Itoa(side.n), textColor)
 		tinyfont.WriteLine(g.d, &proggy.TinySZ8pt7b, x+4, 74, side.name, dimText)
@@ -498,15 +585,28 @@ func (g *Game) drawPanel() {
 			g.fill(rect{x, 80, 88, 3}, turnColor)
 		}
 	}
-	tinyfont.WriteLine(g.d, &proggy.TinySZ8pt7b, panelX, 108, "CPU LEVEL: "+levels[g.level].Name, dimText)
 	msgColor := textColor
 	if g.phase == gameOver {
 		msgColor = turnColor
 	}
-	tinyfont.WriteLine(g.d, &freesans.Bold12pt7b, panelX, 146, g.message, msgColor)
-	if g.cpuInfo != "" {
-		tinyfont.WriteLine(g.d, &proggy.TinySZ8pt7b, panelX, 180, g.cpuInfo, dimText)
+	if l.small {
+		tinyfont.WriteLine(g.d, &proggy.TinySZ8pt7b, l.panelX, 74, "CPU LEVEL: "+levels[g.level].Name, dimText)
+		y := g.writeLines(l.panelX, 100, l.panelW, &freesans.Bold9pt7b, g.message, " ", msgColor)
+		if g.cpuInfo != "" {
+			g.writeLines(l.panelX, y, l.panelW, &proggy.TinySZ8pt7b, g.cpuInfo, "  ", dimText)
+		}
+		return
 	}
+	tinyfont.WriteLine(g.d, &proggy.TinySZ8pt7b, l.panelX, 108, "CPU LEVEL: "+levels[g.level].Name, dimText)
+	tinyfont.WriteLine(g.d, &freesans.Bold12pt7b, l.panelX, 146, g.message, msgColor)
+	if g.cpuInfo != "" {
+		tinyfont.WriteLine(g.d, &proggy.TinySZ8pt7b, l.panelX, 180, g.cpuInfo, dimText)
+	}
+}
+
+// capHeight is the height of the capital letters of font.
+func capHeight(font tinyfont.Fonter) uint8 {
+	return uint8(-font.GetGlyph('H').Info().YOffset)
 }
 
 func abs(v int) int {

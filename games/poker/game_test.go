@@ -7,15 +7,28 @@ import (
 	"github.com/sat0ken/tinygo-cyd/games/cards"
 	"github.com/sat0ken/tinygo-cyd/internal/goldentest"
 	"github.com/sat0ken/tinygo-cyd/memlcd"
-	"github.com/sat0ken/tinygo-cyd/romfont/freesans"
 	"github.com/sat0ken/tinygo-cyd/romfont/proggy"
 	"tinygo.org/x/tinyfont"
 )
 
 const dt = float32(1.0 / 60)
 
+// sizes are the screens the game has a layout for; golden is the prefix of
+// the golden images.
+var sizes = []struct {
+	w, h   int16
+	golden string
+}{
+	{board.Width, board.Height, "poker_"}, // ESP32-4827S043, ESP32-3248S035C
+	{320, 240, "poker_small_"},            // ESP32-2432S028R
+}
+
 func newTestGame() (*Game, *memlcd.Display, *memlcd.Touch) {
-	d := memlcd.New(board.Width, board.Height)
+	return newTestGameSize(board.Width, board.Height)
+}
+
+func newTestGameSize(w, h int16) (*Game, *memlcd.Display, *memlcd.Touch) {
+	d := memlcd.New(w, h)
 	touch := &memlcd.Touch{}
 	g := NewGame(d, touch, func() uint32 { return 12 })
 	g.Start()
@@ -59,18 +72,30 @@ func stack(g *Game, hand [5]cards.Card, more ...cards.Card) {
 }
 
 func TestInitialScreen(t *testing.T) {
-	_, d, _ := newTestGame()
-	goldentest.Check(t, "poker_start", d.Image())
+	for _, s := range sizes {
+		g, d, _ := newTestGameSize(s.w, s.h)
+		if s.w == 320 {
+			g.OnExit = func() {}
+			g.Start()
+		}
+		goldentest.Check(t, s.golden+"start", d.Image())
+	}
 }
 
 func TestDealHoldDrawWin(t *testing.T) {
-	g, d, touch := newTestGame()
-	tapRect(g, touch, betButton())
-	tapRect(g, touch, betButton())
+	for _, s := range sizes {
+		testDealHoldDrawWin(t, s.w, s.h, s.golden)
+	}
+}
+
+func testDealHoldDrawWin(t *testing.T, w, h int16, golden string) {
+	g, d, touch := newTestGameSize(w, h)
+	tapRect(g, touch, g.l.bet.r)
+	tapRect(g, touch, g.l.bet.r)
 	if g.bet != 3 {
 		t.Fatalf("bet %d", g.bet)
 	}
-	tapRect(g, touch, dealButton())
+	tapRect(g, touch, g.l.deal.r)
 	if g.credits != startCr-3 || g.phase != dealing {
 		t.Fatalf("credits %d phase %d", g.credits, g.phase)
 	}
@@ -78,38 +103,38 @@ func TestDealHoldDrawWin(t *testing.T) {
 		cards.New(cards.Hearts, 9), cards.New(cards.Spades, 9), cards.New(cards.Clubs, 2),
 		cards.New(cards.Diamonds, 13), cards.New(cards.Diamonds, 9),
 	}, cards.New(cards.Clubs, 9), cards.New(cards.Hearts, 5))
-	tapRect(g, touch, cardRect(0)) // ignored while the cards turn over
+	tapRect(g, touch, g.l.cardRect(0)) // ignored while the cards turn over
 	settle(g)
 	if g.phase != holding || g.round.Held != [5]bool{} {
 		t.Fatalf("phase %d held %v", g.phase, g.round.Held)
 	}
 	for _, i := range []int{0, 1, 4} {
-		tapRect(g, touch, cardRect(i))
+		tapRect(g, touch, g.l.cardRect(i))
 	}
-	tapRect(g, touch, cardRect(3)) // hold and let go again
-	tapRect(g, touch, cardRect(3))
+	tapRect(g, touch, g.l.cardRect(3)) // hold and let go again
+	tapRect(g, touch, g.l.cardRect(3))
 	if g.round.Held != [5]bool{true, true, false, false, true} {
 		t.Fatalf("held %v", g.round.Held)
 	}
-	goldentest.Check(t, "poker_hold", d.Image())
+	goldentest.Check(t, golden+"hold", d.Image())
 
-	tapRect(g, touch, dealButton())
+	tapRect(g, touch, g.l.deal.r)
 	settle(g)
 	if g.phase != idle || g.result != FourOfAKind || g.won != 75 || g.credits != startCr-3+75 {
 		t.Fatalf("phase %d result %v won %d credits %d", g.phase, g.result, g.won, g.credits)
 	}
-	goldentest.Check(t, "poker_win", d.Image())
+	goldentest.Check(t, golden+"win", d.Image())
 }
 
 func TestMaxBetDeals(t *testing.T) {
 	g, _, touch := newTestGame()
-	tapRect(g, touch, maxButton())
+	tapRect(g, touch, g.l.max.r)
 	if g.bet != MaxBet || g.credits != startCr-MaxBet || g.phase != dealing {
 		t.Fatalf("bet %d credits %d phase %d", g.bet, g.credits, g.phase)
 	}
-	tapRect(g, touch, betButton()) // not while playing
+	tapRect(g, touch, g.l.bet.r) // not while playing
 	settle(g)
-	tapRect(g, touch, betButton())
+	tapRect(g, touch, g.l.bet.r)
 	if g.bet != MaxBet {
 		t.Fatal("bet changed during a hand")
 	}
@@ -118,15 +143,15 @@ func TestMaxBetDeals(t *testing.T) {
 func TestOutOfCredits(t *testing.T) {
 	g, _, touch := newTestGame()
 	g.credits, g.bet = 2, 5
-	tapRect(g, touch, dealButton())
+	tapRect(g, touch, g.l.deal.r)
 	if g.bet != 2 || g.credits != 0 {
 		t.Fatalf("bet %d credits %d", g.bet, g.credits)
 	}
 	settle(g)
-	tapRect(g, touch, dealButton())
+	tapRect(g, touch, g.l.deal.r)
 	settle(g)
 	g.credits = 0 // make sure, whatever the hand paid
-	tapRect(g, touch, dealButton())
+	tapRect(g, touch, g.l.deal.r)
 	if g.credits != startCr || !g.refill || g.phase != idle {
 		t.Fatalf("credits %d refill %v phase %d", g.credits, g.refill, g.phase)
 	}
@@ -140,7 +165,7 @@ func TestManyHands(t *testing.T) {
 	for n := 0; n < 300; n++ {
 		g.bet = 1 + r.Intn(MaxBet)
 		before := g.credits
-		tapRect(g, touch, dealButton())
+		tapRect(g, touch, g.l.deal.r)
 		if g.refill {
 			bets -= startCr // count the refill as a negative bet
 			continue
@@ -149,12 +174,12 @@ func TestManyHands(t *testing.T) {
 		settle(g)
 		for i := 0; i < 5; i++ {
 			if r.Intn(2) == 0 {
-				tapRect(g, touch, cardRect(i))
+				tapRect(g, touch, g.l.cardRect(i))
 			}
 		}
 		held := g.round.Held
 		kept := g.round.Hand
-		tapRect(g, touch, dealButton())
+		tapRect(g, touch, g.l.deal.r)
 		settle(g)
 		for i := range held {
 			if held[i] && g.round.Hand[i] != kept[i] {
@@ -176,34 +201,54 @@ func TestBackButton(t *testing.T) {
 	left := false
 	g.OnExit = func() { left = true }
 	g.Start()
-	tapRect(g, touch, backButton())
+	tapRect(g, touch, g.l.back.r)
 	if !left {
 		t.Fatal("OnExit not called")
 	}
 }
 
 func TestTextsFit(t *testing.T) {
-	for _, b := range []struct {
-		r    rect
-		font tinyfont.Fonter
-		name string
-	}{
-		{backButton(), backFont, "< GAMES"}, {betButton(), btnFont, "BET ONE"}, {maxButton(), btnFont, "MAX BET"},
-		{dealButton(), btnFont, "DEAL"}, {infoRect(), btnFont, "CREDIT 9999"},
-	} {
-		if _, w := tinyfont.LineWidth(b.font, b.name); int16(w) > b.r.w-6 {
-			t.Errorf("%q is %dpx, button is %dpx", b.name, w, b.r.w)
+	for _, s := range sizes {
+		l := layoutFor(s.w, s.h)
+		for _, b := range []struct {
+			b    button
+			name string
+		}{
+			{l.back, "< GAMES"}, {l.bet, "BET ONE"}, {l.max, "MAX BET"}, {l.deal, "DEAL"}, {l.deal, "DRAW"},
+			{button{l.info, l.creditFont, 0}, "CREDIT 9999"},
+		} {
+			if _, w := tinyfont.LineWidth(b.b.font, b.name); int16(w) > b.b.r.w-6 {
+				t.Errorf("%dx%d: %q is %dpx, button is %dpx", s.w, s.h, b.name, w, b.b.r.w)
+			}
 		}
-	}
-	for _, s := range []string{"OUT OF CREDITS - TAP DEAL FOR 100 MORE", "STRAIGHT FLUSH   WIN 4000"} {
-		if _, w := tinyfont.LineWidth(&freesans.Bold9pt7b, s); w > 470 {
-			t.Errorf("%q is %dpx", s, w)
+		for _, m := range []string{"OUT OF CREDITS - TAP DEAL FOR 100 MORE", "STRAIGHT FLUSH   WIN 4000"} {
+			font, _ := l.msgFont(m)
+			if _, w := tinyfont.LineWidth(font, m); int16(w) > l.labels.w-8 {
+				t.Errorf("%dx%d: %q is %dpx", s.w, s.h, m, w)
+			}
 		}
-	}
-	if _, w := tinyfont.LineWidth(&proggy.TinySZ8pt7b, StraightFlush.String()); nameX+int16(w) > betColX {
-		t.Errorf("hand names reach the bet columns")
-	}
-	if last := cardRect(4); last.x+last.w > board.Width || last.y+last.h > barY {
-		t.Errorf("cards end at %d,%d", last.x+last.w, last.y+last.h)
+		if _, w := tinyfont.LineWidth(&proggy.TinySZ8pt7b, StraightFlush.String()); l.nameX+int16(w) > l.betColX {
+			t.Errorf("%dx%d: hand names reach the bet columns", s.w, s.h)
+		}
+		if _, w := tinyfont.LineWidth(&proggy.TinySZ8pt7b, "4000"); int16(w)+l.numRight > l.betColW-4 {
+			t.Errorf("%dx%d: the royal flush pay does not fit its column", s.w, s.h)
+		}
+		if last := l.cardRect(4); last.x+last.w > s.w || last.y+last.h > l.barY {
+			t.Errorf("%dx%d: cards end at %d,%d", s.w, s.h, last.x+last.w, last.y+last.h)
+		}
+		if col := l.betColX + MaxBet*l.betColW; col > l.pay.x+l.pay.w {
+			t.Errorf("%dx%d: the pay table ends at %d", s.w, s.h, col)
+		}
+		bar := []rect{l.back.r, l.bet.r, l.max.r, l.info, l.deal.r}
+		for i, a := range bar {
+			if a.x < 0 || a.x+a.w > s.w || a.y+a.h > s.h {
+				t.Errorf("%dx%d: %v is off the screen", s.w, s.h, a)
+			}
+			for _, b := range bar[i+1:] {
+				if a.x < b.x+b.w && b.x < a.x+a.w {
+					t.Errorf("%dx%d: %v overlaps %v", s.w, s.h, a, b)
+				}
+			}
+		}
 	}
 }

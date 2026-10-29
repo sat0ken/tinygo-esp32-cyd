@@ -1,5 +1,6 @@
-// Package sudoku is a sudoku game for a 480x272 touch screen. It depends
-// only on hal: examples/09_sudoku runs it alone, cmd/games from a launcher.
+// Package sudoku is a sudoku game for a 480x272 or 320x240 touch screen.
+// It depends only on hal: examples/09_sudoku runs it alone, cmd/games from
+// a launcher.
 package sudoku
 
 import (
@@ -12,23 +13,7 @@ import (
 	"tinygo.org/x/tinyfont"
 )
 
-// Layout for 480x272: the grid on the left, the controls on the right.
-const (
-	gridX = 8
-	gridY = 9
-	pitch = 28 // cell pitch; lines are drawn on the pitch, thick ones every 3 cells
-
-	panelX  = 282
-	padY    = 40
-	padW    = 58
-	padH    = 42
-	padGap  = 6
-	btnY    = 188
-	btnH    = 36
-	statusY = 244
-
-	tapGap = 0.15 // seconds; ignore taps closer than this (resistive touch bounces)
-)
+const tapGap = 0.15 // seconds; ignore taps closer than this (resistive touch bounces)
 
 var (
 	bgColor      = color.RGBA{18, 22, 32, 255}
@@ -76,6 +61,101 @@ type rect struct{ x, y, w, h int16 }
 
 func (r rect) has(x, y int16) bool { return x >= r.x && x < r.x+r.w && y >= r.y && y < r.y+r.h }
 
+// layout is where everything is: the grid on the left, the controls on the
+// right.
+type layout struct {
+	gridX, gridY int16
+	pitch        int16 // cell pitch; lines are drawn on the pitch, thick ones every 3 cells
+	cellBase     int16 // baseline of a digit in a cell
+
+	pad0    rect  // the 1 of the number pad; 2..9 follow in rows of three
+	padGap  int16 // between the keys
+	padBase int16
+	buttons [3]rect // ERASE, HINT, NEW
+	btnBase int16
+
+	head  rect // difficulty and clock
+	tail  rect // cells left and mistakes
+	small bool // the status on four short lines instead of two
+
+	solved rect // the SOLVED! box
+
+	titleBase, subBase int16 // the menu's title and the line under it
+	menu0              rect  // the first difficulty button
+	menuStep           int16 // from one difficulty button to the next
+	menuFont           tinyfont.Fonter
+	menuBase           int16
+}
+
+// layoutFor returns the layout for a w x h screen: the 480x272 one, or the
+// 320x240 one (ESP32-2432S028R) on smaller screens.
+func layoutFor(w, h int16) layout {
+	if w >= 480 && h >= 272 {
+		const panelX, padW, padGap = 282, 58, 6
+		l := layout{
+			gridX: 8, gridY: 9, pitch: 28, cellBase: 21,
+			pad0: rect{panelX, 40, padW, 42}, padGap: padGap, padBase: 29,
+			btnBase:   22,
+			head:      rect{panelX, 8, w - panelX - 4, 24},
+			tail:      rect{panelX, 242, w - panelX - 4, 22},
+			solved:    rect{38, 89, 9*28 - 58, 94},
+			titleBase: 70, subBase: 120,
+			menu0: rect{40, 160, 120, 56}, menuStep: 140,
+			menuFont: &freesans.Bold12pt7b, menuBase: 36,
+		}
+		for k := range l.buttons {
+			l.buttons[k] = rect{panelX + int16(k)*(padW+padGap), 188, padW, 36}
+		}
+		return l
+	}
+	const panelX = 238 // the grid ends at 4+9*25+2 = 231
+	return layout{
+		gridX: 4, gridY: 6, pitch: 25, cellBase: 20,
+		pad0: rect{panelX, 42, 24, 28}, padGap: 3, padBase: 22,
+		buttons:   [3]rect{{panelX, 140, 37, 26}, {panelX + 41, 140, 37, 26}, {panelX, 170, 78, 26}},
+		btnBase:   17,
+		head:      rect{panelX, 2, w - panelX - 4, 36},
+		tail:      rect{panelX, 202, w - panelX - 4, 32},
+		small:     true,
+		solved:    rect{18, 72, 9*25 - 26, 94},
+		titleBase: 72, subBase: 98, // the title clears the "< GAMES" button
+		menu0: rect{12, 116, 92, 50}, menuStep: 102,
+		menuFont: &freesans.Bold9pt7b, menuBase: 31,
+	}
+}
+
+// cellRect is the inside of cell i (without the grid lines).
+func (l *layout) cellRect(i int) rect {
+	r, c := i/9, i%9
+	x0 := l.gridX + int16(c)*l.pitch
+	y0 := l.gridY + int16(r)*l.pitch
+	left, top := int16(1), int16(1)
+	if c%3 == 0 {
+		left = 2 // after a thick line
+	}
+	if r%3 == 0 {
+		top = 2
+	}
+	return rect{x0 + left, y0 + top, l.pitch - left, l.pitch - top}
+}
+
+func (l *layout) gridRect() rect { return rect{l.gridX, l.gridY, 9*l.pitch + 2, 9*l.pitch + 2} }
+
+func (l *layout) padRect(k int) rect { // k = 0..8 for digits 1..9
+	p := l.pad0
+	p.x += int16(k%3) * (p.w + l.padGap)
+	p.y += int16(k/3) * (p.h + l.padGap)
+	return p
+}
+
+func (l *layout) menuButton(k int) rect {
+	r := l.menu0
+	r.x += int16(k) * l.menuStep
+	return r
+}
+
+func backButton() rect { return rect{8, 8, 84, 28} }
+
 // look is how a cell is drawn; cells are redrawn only when it changes.
 type look struct {
 	bg, fg color.RGBA
@@ -86,6 +166,7 @@ type look struct {
 type Game struct {
 	d hal.Display
 	t hal.Touch
+	l layout
 
 	// NewSeed returns the seed for the next puzzle.
 	NewSeed func() uint32
@@ -115,40 +196,9 @@ type Game struct {
 
 // NewGame shows the difficulty menu.
 func NewGame(d hal.Display, t hal.Touch, newSeed func() uint32) *Game {
-	g := &Game{d: d, t: t, NewSeed: newSeed, sel: -1, lastTap: -1}
-	return g
+	w, h := d.Size()
+	return &Game{d: d, t: t, l: layoutFor(w, h), NewSeed: newSeed, sel: -1, lastTap: -1}
 }
-
-// ---- geometry ----
-
-// cellRect is the inside of cell i (without the grid lines).
-func cellRect(i int) rect {
-	r, c := i/9, i%9
-	x0 := gridX + int16(c)*pitch
-	y0 := gridY + int16(r)*pitch
-	left, top := int16(1), int16(1)
-	if c%3 == 0 {
-		left = 2 // after a thick line
-	}
-	if r%3 == 0 {
-		top = 2
-	}
-	return rect{x0 + left, y0 + top, pitch - left, pitch - top}
-}
-
-func gridRect() rect { return rect{gridX, gridY, 9*pitch + 2, 9*pitch + 2} }
-
-func padRect(k int) rect { // k = 0..8 for digits 1..9
-	return rect{panelX + int16(k%3)*(padW+padGap), padY + int16(k/3)*(padH+padGap), padW, padH}
-}
-
-func buttonRect(k int) rect { // 0 = ERASE, 1 = HINT, 2 = NEW
-	return rect{panelX + int16(k)*(padW+padGap), btnY, padW, btnH}
-}
-
-func menuButton(k int) rect { return rect{40 + int16(k)*140, 160, 120, 56} }
-
-func backButton() rect { return rect{8, 8, 84, 28} }
 
 // ---- drawing helpers ----
 
@@ -166,12 +216,12 @@ func (g *Game) DrawMenu() {
 	g.screen = menuScreen
 	w, h := g.d.Size()
 	g.fill(rect{0, 0, w, h}, bgColor)
-	g.textCentered(rect{0, 0, w, 0}, &freesans.Bold24pt7b, "SUDOKU", textColor, 70)
-	g.textCentered(rect{0, 0, w, 0}, &proggy.TinySZ8pt7b, "choose a difficulty", dimText, 120)
+	g.textCentered(rect{0, 0, w, 0}, &freesans.Bold24pt7b, "SUDOKU", textColor, g.l.titleBase)
+	g.textCentered(rect{0, 0, w, 0}, &proggy.TinySZ8pt7b, "choose a difficulty", dimText, g.l.subBase)
 	for k, df := range difficulties {
-		r := menuButton(k)
+		r := g.l.menuButton(k)
 		g.fill(r, df.Color)
-		g.textCentered(r, &freesans.Bold12pt7b, df.Name, textColor, 36)
+		g.textCentered(r, g.l.menuFont, df.Name, textColor, g.l.menuBase)
 		g.textCentered(rect{r.x, r.y + r.h, r.w, 0}, &proggy.TinySZ8pt7b, strconv.Itoa(df.Clues)+" clues", dimText, 18)
 	}
 	if g.OnExit != nil {
@@ -204,22 +254,22 @@ func (g *Game) drawPlay() {
 	w, h := g.d.Size()
 	g.fill(rect{0, 0, w, h}, bgColor)
 	// Grid lines: the cells are drawn on top, between the lines.
-	gr := gridRect()
+	gr := g.l.gridRect()
 	for i := int16(0); i <= 9; i++ {
 		c, t := thinColor, int16(1)
 		if i%3 == 0 {
 			c, t = thickColor, 2
 		}
-		g.fill(rect{gr.x + i*pitch, gr.y, t, gr.h}, c)
-		g.fill(rect{gr.x, gr.y + i*pitch, gr.w, t}, c)
+		g.fill(rect{gr.x + i*g.l.pitch, gr.y, t, gr.h}, c)
+		g.fill(rect{gr.x, gr.y + i*g.l.pitch, gr.w, t}, c)
 	}
 	g.drawn = [81]look{}
 	g.drawnPad = [9]look{}
 	g.drawnState = ""
 	for k, name := range []string{"ERASE", "HINT", "NEW"} {
-		r := buttonRect(k)
+		r := g.l.buttons[k]
 		g.fill(r, btnColor)
-		g.textCentered(r, &proggy.TinySZ8pt7b, name, textColor, 22)
+		g.textCentered(r, &proggy.TinySZ8pt7b, name, textColor, g.l.btnBase)
 	}
 	g.refresh()
 }
@@ -279,10 +329,10 @@ func (g *Game) refresh() {
 		if l == g.drawn[i] {
 			continue
 		}
-		r := cellRect(i)
+		r := g.l.cellRect(i)
 		g.fill(r, l.bg)
 		if l.digit != 0 {
-			g.textCentered(r, &freesans.Bold12pt7b, string(rune('0'+l.digit)), l.fg, 21)
+			g.textCentered(r, &freesans.Bold12pt7b, string(rune('0'+l.digit)), l.fg, g.l.cellBase)
 		}
 		g.drawn[i] = l
 	}
@@ -303,9 +353,9 @@ func (g *Game) refresh() {
 		if l == g.drawnPad[k] {
 			continue
 		}
-		r := padRect(k)
+		r := g.l.padRect(k)
 		g.fill(r, l.bg)
-		g.textCentered(r, &freesans.Bold12pt7b, string(rune('0'+d)), l.fg, 29)
+		g.textCentered(r, &freesans.Bold12pt7b, string(rune('0'+d)), l.fg, g.l.padBase)
 		g.drawnPad[k] = l
 	}
 
@@ -329,22 +379,29 @@ func clock(sec float32) string {
 }
 
 func (g *Game) drawStatus() {
-	head := difficulties[g.diff].Name + "   " + clock(g.elapsed)
-	tail := "LEFT " + strconv.Itoa(g.emptyCount()) + "   MISS " + strconv.Itoa(g.mistakes)
-	state := head + "|" + tail
+	name, time := difficulties[g.diff].Name, clock(g.elapsed)
+	left, miss := "LEFT "+strconv.Itoa(g.emptyCount()), "MISS "+strconv.Itoa(g.mistakes)
+	state := name + time + left + miss
 	if state == g.drawnState {
 		return
 	}
-	w, _ := g.d.Size()
-	g.fill(rect{panelX, 8, w - panelX - 4, 24}, bgColor)
-	tinyfont.WriteLine(g.d, &freesans.Bold9pt7b, panelX, 26, head, textColor)
-	g.fill(rect{panelX, statusY - 2, w - panelX - 4, 22}, bgColor)
-	tinyfont.WriteLine(g.d, &proggy.TinySZ8pt7b, panelX, statusY+12, tail, dimText)
+	l := &g.l
+	g.fill(l.head, bgColor)
+	g.fill(l.tail, bgColor)
+	if l.small {
+		tinyfont.WriteLine(g.d, &proggy.TinySZ8pt7b, l.head.x, l.head.y+12, name, dimText)
+		tinyfont.WriteLine(g.d, &freesans.Bold9pt7b, l.head.x, l.head.y+32, time, textColor)
+		tinyfont.WriteLine(g.d, &proggy.TinySZ8pt7b, l.tail.x, l.tail.y+12, left, dimText)
+		tinyfont.WriteLine(g.d, &proggy.TinySZ8pt7b, l.tail.x, l.tail.y+26, miss, dimText)
+	} else {
+		tinyfont.WriteLine(g.d, &freesans.Bold9pt7b, l.head.x, l.head.y+18, name+"   "+time, textColor)
+		tinyfont.WriteLine(g.d, &proggy.TinySZ8pt7b, l.tail.x, l.tail.y+14, left+"   "+miss, dimText)
+	}
 	g.drawnState = state
 }
 
 func (g *Game) drawSolved() {
-	r := rect{gridX + 30, gridY + 80, 9*pitch - 58, 94}
+	r := g.l.solved
 	g.fill(r, bgColor)
 	g.fill(rect{r.x, r.y, r.w, 3}, winColor)
 	g.fill(rect{r.x, r.y + r.h - 3, r.w, 3}, winColor)
@@ -373,7 +430,7 @@ func (g *Game) Update(dt float32) {
 		}
 		if tap {
 			for k := range difficulties {
-				if menuButton(k).has(x, y) {
+				if g.l.menuButton(k).has(x, y) {
 					g.startGame(k)
 					return
 				}
@@ -393,9 +450,10 @@ func (g *Game) Update(dt float32) {
 }
 
 func (g *Game) tapPlay(x, y int16) {
-	if gridRect().has(x, y) {
-		c := int((x - gridX) / pitch)
-		r := int((y - gridY) / pitch)
+	l := &g.l
+	if l.gridRect().has(x, y) {
+		c := int((x - l.gridX) / l.pitch)
+		r := int((y - l.gridY) / l.pitch)
 		if c > 8 {
 			c = 8
 		}
@@ -410,17 +468,17 @@ func (g *Game) tapPlay(x, y int16) {
 		return
 	}
 	for k := 0; k < 9; k++ {
-		if padRect(k).has(x, y) {
+		if l.padRect(k).has(x, y) {
 			g.enter(uint8(k + 1))
 			return
 		}
 	}
 	switch {
-	case buttonRect(0).has(x, y):
+	case l.buttons[0].has(x, y):
 		g.erase()
-	case buttonRect(1).has(x, y):
+	case l.buttons[1].has(x, y):
 		g.hint()
-	case buttonRect(2).has(x, y):
+	case l.buttons[2].has(x, y):
 		g.DrawMenu()
 	}
 }

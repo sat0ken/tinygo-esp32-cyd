@@ -1,6 +1,6 @@
-// Package solitaire is klondike solitaire for a 480x272 touch screen. It
-// depends only on hal: examples/11_solitaire runs it alone, cmd/games from
-// a launcher.
+// Package solitaire is klondike solitaire for a 480x272 or 320x240 touch
+// screen. It depends only on hal: examples/11_solitaire runs it alone,
+// cmd/games from a launcher.
 package solitaire
 
 import (
@@ -14,22 +14,8 @@ import (
 	"tinygo.org/x/tinyfont"
 )
 
-// Layout for 480x272: a button bar, the stock/waste/foundations row and
-// the seven tableau columns.
 const (
-	barH   = 22
-	cardW  = 56
-	cardH  = 72
-	pitch  = 62 // column pitch
-	leftX  = (480 - (7*cardW + 6*(pitch-cardW))) / 2
-	topY   = barH + 4
-	tabY   = topY + cardH + 4
-	fanOff = 12 // waste fan in draw-3 mode
-	bottom = 272
-
-	downOff = 5  // vertical offset of face-down cards in a column
-	upOff   = 16 // vertical offset of face-up cards (squeezed if needed)
-	minUp   = 7  // never less: the rank in the corner must stay readable
+	minUp = 7 // face-up cards in a column never closer: the rank in the corner must stay readable
 
 	maxUndo    = 200
 	tapGap     = 0.15 // seconds; ignore taps closer than this (touch bounce)
@@ -49,17 +35,58 @@ type rect struct{ x, y, w, h int16 }
 
 func (r rect) has(x, y int16) bool { return x >= r.x && x < r.x+r.w && y >= r.y && y < r.y+r.h }
 
-func colX(i int) int16 { return leftX + int16(i)*pitch }
+// layout is where everything is: a button bar, the stock/waste/
+// foundations row and the seven tableau columns.
+type layout struct {
+	barH                int16
+	cardW, cardH, pitch int16 // pitch: from one column to the next
+	leftX, topY, tabY   int16
+	fanOff              int16 // waste fan in draw-3 mode
+	bottom              int16
+	downOff, upOff      int16 // vertical offsets of face-down and face-up cards in a column (squeezed if needed)
 
-func stockRect() rect           { return rect{colX(0), topY, cardW, cardH} }
-func wasteRect() rect           { return rect{colX(1), topY, cardW + 2*fanOff, cardH} }
-func foundationRect(f int) rect { return rect{colX(3 + f), topY, cardW, cardH} }
-func columnRect(i int) rect     { return rect{colX(i), tabY, cardW, bottom - tabY} }
+	back, new, undo, draw, status rect
+	won                           rect // the YOU WIN! box
+}
 
-func backButton() rect { return rect{2, 1, 70, barH - 2} }
-func newButton() rect  { return rect{76, 1, 60, barH - 2} }
-func undoButton() rect { return rect{140, 1, 60, barH - 2} }
-func drawButton() rect { return rect{204, 1, 70, barH - 2} }
+// layoutFor returns the layout for a w x h screen: the 480x272 one, or the
+// 320x240 one (ESP32-2432S028R) on smaller screens.
+func layoutFor(w, h int16) layout {
+	const barH = 22
+	if w >= 480 && h >= 272 {
+		const cardW, cardH, pitch = 56, 72, 62
+		return layout{
+			barH: barH, cardW: cardW, cardH: cardH, pitch: pitch,
+			leftX: (480 - (7*cardW + 6*(pitch-cardW))) / 2, topY: barH + 4, tabY: barH + 4 + cardH + 4,
+			fanOff: 12, bottom: h, downOff: 5, upOff: 16,
+			back: rect{2, 1, 70, barH - 2}, new: rect{76, 1, 60, barH - 2},
+			undo: rect{140, 1, 60, barH - 2}, draw: rect{204, 1, 70, barH - 2},
+			status: rect{284, 1, 480 - 286, barH - 2},
+			won:    rect{100, 100, 280, 92},
+		}
+	}
+	// Cards of the same shape, smaller; the longest column (6 face down,
+	// 13 face up) still fits with the face-up cards minUp apart.
+	const cardW, cardH, pitch = 42, 54, 45
+	return layout{
+		barH: barH, cardW: cardW, cardH: cardH, pitch: pitch,
+		leftX: (w - (7*cardW + 6*(pitch-cardW))) / 2, topY: barH + 4, tabY: barH + 4 + cardH + 4,
+		fanOff: 12, bottom: h, downOff: 4, upOff: 14,
+		back: rect{2, 1, 50, barH - 2}, new: rect{56, 1, 40, barH - 2},
+		undo: rect{100, 1, 44, barH - 2}, draw: rect{148, 1, 48, barH - 2},
+		status: rect{200, 1, w - 202, barH - 2},
+		won:    rect{30, 80, w - 60, 92},
+	}
+}
+
+func (l *layout) colX(i int) int16 { return l.leftX + int16(i)*l.pitch }
+
+func (l *layout) stockRect() rect { return rect{l.colX(0), l.topY, l.cardW, l.cardH} }
+func (l *layout) wasteRect() rect { return rect{l.colX(1), l.topY, l.cardW + 2*l.fanOff, l.cardH} }
+
+func (l *layout) foundationRect(f int) rect { return rect{l.colX(3 + f), l.topY, l.cardW, l.cardH} }
+
+func (l *layout) columnRect(i int) rect { return rect{l.colX(i), l.tabY, l.cardW, l.bottom - l.tabY} }
 
 type phase int
 
@@ -73,6 +100,7 @@ const (
 type Game struct {
 	d hal.Display
 	t hal.Touch
+	l layout
 
 	// NewSeed returns the seed for the next deal.
 	NewSeed func() uint32
@@ -97,7 +125,8 @@ type Game struct {
 
 // NewGame creates a game; call Start to deal.
 func NewGame(d hal.Display, t hal.Touch, newSeed func() uint32) *Game {
-	return &Game{d: d, t: t, NewSeed: newSeed, draw: 1, lastTap: -1, drawn: map[rect]string{}}
+	w, h := d.Size()
+	return &Game{d: d, t: t, l: layoutFor(w, h), NewSeed: newSeed, draw: 1, lastTap: -1, drawn: map[rect]string{}}
 }
 
 // Start deals a new game and draws the whole screen.
@@ -160,18 +189,19 @@ func (g *Game) Update(dt float32) {
 
 // tapBar handles the buttons; it returns true if one was tapped.
 func (g *Game) tapBar(x, y int16) bool {
-	if y >= barH {
+	l := &g.l
+	if y >= l.barH {
 		return false
 	}
 	switch {
-	case g.OnExit != nil && backButton().has(x, y):
+	case g.OnExit != nil && l.back.has(x, y):
 		g.OnExit()
-	case newButton().has(x, y):
+	case l.new.has(x, y):
 		g.Start()
-	case undoButton().has(x, y):
+	case l.undo.has(x, y):
 		g.undo()
 		g.dirty = true
-	case drawButton().has(x, y):
+	case l.draw.has(x, y):
 		g.draw = 4 - g.draw // 1 <-> 3; a new deal in the new mode
 		g.Start()
 	default:
@@ -181,26 +211,27 @@ func (g *Game) tapBar(x, y int16) bool {
 }
 
 func (g *Game) tapTable(x, y int16) {
+	l := &g.l
 	switch {
-	case stockRect().has(x, y):
+	case l.stockRect().has(x, y):
 		g.save()
 		if !g.s.DrawStock() {
 			g.history = g.history[:len(g.history)-1]
 		}
 		g.dirty = true
 		return
-	case wasteRect().has(x, y) && y < topY+cardH:
+	case l.wasteRect().has(x, y) && y < l.topY+l.cardH:
 		g.moveFrom(Pos{Kind: WastePile})
 		return
 	}
 	for f := 0; f < 4; f++ {
-		if foundationRect(f).has(x, y) {
+		if l.foundationRect(f).has(x, y) {
 			g.moveFrom(Pos{Kind: FoundationPile, Pile: f})
 			return
 		}
 	}
 	for col := 0; col < 7; col++ {
-		if columnRect(col).has(x, y) {
+		if l.columnRect(col).has(x, y) {
 			if i, ok := g.cardAt(col, y); ok {
 				g.moveFrom(Pos{Kind: TableauPile, Pile: col, Index: i})
 			}
@@ -252,23 +283,24 @@ func (g *Game) undo() {
 // offsets returns the y of each card of column col, squeezing the face-up
 // spacing (and then the face-down one) when the column is too long.
 func (g *Game) offsets(col int) []int16 {
+	l := &g.l
 	c := &g.s.Tableau[col]
 	n := len(c.Cards)
 	ys := make([]int16, n)
-	down, up := int16(downOff), int16(upOff)
-	avail := int16(bottom - tabY - 2 - cardH)
+	down, up := l.downOff, l.upOff
+	avail := l.bottom - l.tabY - 2 - l.cardH
 	need := func() int16 { return int16(c.Down)*down + int16(n-c.Down-1)*up }
 	if n-c.Down > 1 && need() > avail {
 		down = 2
 		up = (avail - int16(c.Down)*down) / int16(n-c.Down-1)
-		if up > upOff {
-			up = upOff
+		if up > l.upOff {
+			up = l.upOff
 		}
 		if up < minUp {
 			up = minUp
 		}
 	}
-	y := int16(tabY)
+	y := l.tabY
 	for i := 0; i < n; i++ {
 		ys[i] = y
 		if i < c.Down {
@@ -285,7 +317,7 @@ func (g *Game) cardAt(col int, y int16) (int, bool) {
 	c := &g.s.Tableau[col]
 	ys := g.offsets(col)
 	for i := len(c.Cards) - 1; i >= 0; i-- {
-		bottomY := ys[i] + cardH
+		bottomY := ys[i] + g.l.cardH
 		if i < len(c.Cards)-1 {
 			bottomY = ys[i+1]
 		}
@@ -319,7 +351,9 @@ func cardsKey(p []cards.Card) string {
 func (g *Game) refresh() {
 	g.dirty = false
 	g.shown = [2]int{int(g.elapsed), g.s.Moves}
-	sr := stockRect()
+	l := &g.l
+	cardW, cardH := l.cardW, l.cardH
+	sr := l.stockRect()
 	g.region(sr, strconv.Itoa(len(g.s.Stock)), func() {
 		if len(g.s.Stock) > 0 {
 			cards.DrawBack(g.d, sr.x, sr.y, cardW, cardH)
@@ -328,7 +362,7 @@ func (g *Game) refresh() {
 		}
 	})
 
-	wr := wasteRect()
+	wr := l.wasteRect()
 	shown := g.s.Waste
 	if n := len(shown); n > g.s.Draw {
 		shown = shown[n-g.s.Draw:]
@@ -341,12 +375,12 @@ func (g *Game) refresh() {
 			cards.DrawSlot(g.d, wr.x, wr.y, cardW, cardH, "")
 		}
 		for i, c := range shown {
-			cards.DrawFace(g.d, c, wr.x+int16(i)*fanOff, wr.y, cardW, cardH, false)
+			cards.DrawFace(g.d, c, wr.x+int16(i)*l.fanOff, wr.y, cardW, cardH, false)
 		}
 	})
 
 	for f := 0; f < 4; f++ {
-		fr := foundationRect(f)
+		fr := l.foundationRect(f)
 		p := g.s.Foundation[f]
 		key := "-"
 		if len(p) > 0 {
@@ -362,7 +396,7 @@ func (g *Game) refresh() {
 	}
 
 	for col := 0; col < 7; col++ {
-		cr := columnRect(col)
+		cr := l.columnRect(col)
 		c := &g.s.Tableau[col]
 		g.region(cr, strconv.Itoa(c.Down)+":"+cardsKey(c.Cards), func() {
 			if len(c.Cards) == 0 {
@@ -393,16 +427,14 @@ func (g *Game) refresh() {
 
 func (g *Game) drawBar() {
 	w, _ := g.d.Size()
-	g.d.FillRectangle(0, 0, w, barH, barColor)
+	l := &g.l
+	g.d.FillRectangle(0, 0, w, l.barH, barColor)
 	buttons := []struct {
 		r    rect
 		name string
-	}{{newButton(), "NEW"}, {undoButton(), "UNDO"}, {drawButton(), "DRAW " + strconv.Itoa(g.draw)}}
-	if g.OnExit != nil {
-		buttons = append(buttons, struct {
-			r    rect
-			name string
-		}{backButton(), "< GAMES"})
+	}{{l.new, "NEW"}, {l.undo, "UNDO"}, {l.draw, "DRAW " + strconv.Itoa(g.draw)}, {l.back, "< GAMES"}}
+	if g.OnExit == nil {
+		buttons = buttons[:3]
 	}
 	for _, b := range buttons {
 		g.d.FillRectangle(b.r.x, b.r.y, b.r.w, b.r.h, btnColor)
@@ -423,7 +455,7 @@ func clock(sec float32) string {
 }
 
 func (g *Game) drawStatus() {
-	r := rect{284, 1, 480 - 286, barH - 2}
+	r := g.l.status
 	text := "MOVES " + strconv.Itoa(g.s.Moves) + "   " + clock(g.elapsed)
 	g.region(r, text, func() {
 		g.d.FillRectangle(r.x, r.y, r.w, r.h, barColor)
@@ -432,7 +464,7 @@ func (g *Game) drawStatus() {
 }
 
 func (g *Game) drawWon() {
-	r := rect{100, 100, 280, 92}
+	r := g.l.won
 	key := "won " + strconv.Itoa(g.s.Moves)
 	g.region(r, key, func() {
 		g.d.FillRectangle(r.x, r.y, r.w, r.h, barColor)

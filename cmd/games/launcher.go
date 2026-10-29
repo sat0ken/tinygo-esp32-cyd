@@ -76,20 +76,52 @@ var entries = []entry{
 	}},
 }
 
-// tileRect is tile k of a 3x2 grid (one place is still free).
-func tileRect(k int) rect { return rect{10 + int16(k%3)*156, 32 + int16(k/3)*108, 148, 100} }
-
 // Fonts of the tiles (TestTilesFit checks that the texts fit).
 var (
 	nameFont  = &freesans.Bold9pt7b
 	aboutFont = &proggy.TinySZ8pt7b
 )
 
+// layout is where the tiles are: a 3x2 grid (one place is still free).
+type layout struct {
+	titleBase           int16
+	tile0               rect // the first tile
+	stepX, stepY        int16
+	icon                rect // the icon inside a tile; the icons scale with its height
+	nameBase, aboutBase int16
+	footBase            int16 // "tap a game"
+}
+
+// layoutFor returns the layout for a w x h screen: the 480x272 one, or the
+// 320x240 one (ESP32-2432S028R) on smaller screens.
+func layoutFor(w, h int16) layout {
+	if w >= 480 && h >= 272 {
+		return layout{
+			titleBase: 23, tile0: rect{10, 32, 148, 100}, stepX: 156, stepY: 108,
+			icon: rect{8, 5, 148 - 16, 56}, nameBase: 78, aboutBase: 93, footBase: 262,
+		}
+	}
+	// Tiles 104 pixels wide: SOLITAIRE in bold is 99.
+	return layout{
+		titleBase: 21, tile0: rect{1, 26, 104, 100}, stepX: 106, stepY: 103,
+		icon: rect{4, 4, 104 - 8, 46}, nameBase: 70, aboutBase: 86, footBase: h - 3,
+	}
+}
+
+// tileRect is tile k of the grid.
+func (l *layout) tileRect(k int) rect {
+	r := l.tile0
+	r.x += int16(k%3) * l.stepX
+	r.y += int16(k/3) * l.stepY
+	return r
+}
+
 // Launcher shows the list of games and runs the chosen one. Each game gets
 // an OnExit callback, which shows a "< GAMES" button on its first screen.
 type Launcher struct {
 	d hal.Display
 	t hal.Touch
+	l layout
 
 	// Seed returns a new random seed for a game.
 	Seed func() uint32
@@ -101,7 +133,8 @@ type Launcher struct {
 }
 
 func NewLauncher(d hal.Display, t hal.Touch, seed func() uint32) *Launcher {
-	return &Launcher{d: d, t: t, Seed: seed}
+	w, h := d.Size()
+	return &Launcher{d: d, t: t, l: layoutFor(w, h), Seed: seed}
 }
 
 func (l *Launcher) exit() { l.leaving = true }
@@ -130,15 +163,16 @@ func (l *Launcher) Playing() string {
 func (l *Launcher) DrawMenu() {
 	w, h := l.d.Size()
 	l.d.FillRectangle(0, 0, w, h, bgColor)
-	center(l.d, rect{0, 0, w, 0}, &freesans.Bold12pt7b, "TINYGO GAMES", textColor, 23)
+	center(l.d, rect{0, 0, w, 0}, &freesans.Bold12pt7b, "TINYGO GAMES", textColor, l.l.titleBase)
 	for k, e := range entries {
-		r := tileRect(k)
+		r := l.l.tileRect(k)
 		l.d.FillRectangle(r.x, r.y, r.w, r.h, tileColor)
-		e.icon(l, rect{r.x + 8, r.y + 5, r.w - 16, 56})
-		center(l.d, r, nameFont, e.name, textColor, 78)
-		center(l.d, r, aboutFont, e.about, dimText, 93)
+		i := l.l.icon
+		e.icon(l, rect{r.x + i.x, r.y + i.y, i.w, i.h})
+		center(l.d, r, nameFont, e.name, textColor, l.l.nameBase)
+		center(l.d, r, aboutFont, e.about, dimText, l.l.aboutBase)
 	}
-	center(l.d, rect{0, 0, w, 0}, &proggy.TinySZ8pt7b, "tap a game", dimText, 262)
+	center(l.d, rect{0, 0, w, 0}, &proggy.TinySZ8pt7b, "tap a game", dimText, l.l.footBase)
 	l.d.Display()
 }
 
@@ -168,7 +202,7 @@ func (l *Launcher) Update(dt float32) {
 		return
 	}
 	for k, e := range entries {
-		if tileRect(k).has(x, y) {
+		if l.l.tileRect(k).has(x, y) {
 			println("games: start", e.name)
 			l.current = e.start(l)
 			// The finger is still on the tile: do not let the game see it
@@ -186,6 +220,9 @@ func center(d hal.Display, r rect, font tinyfont.Fonter, s string, c color.RGBA,
 
 // ---- icons (drawn here, so the games do not need to export anything) ----
 
+// The icons are drawn for a 56-pixel high rectangle and scaled with its
+// height.
+
 func drawInvaderIcon(l *Launcher, r rect) {
 	art := []string{
 		"..#.....#..",
@@ -197,7 +234,7 @@ func drawInvaderIcon(l *Launcher, r rect) {
 		"#.#.....#.#",
 		"...##.##...",
 	}
-	const px = 6
+	px := r.h / 9
 	x0 := r.x + (r.w-int16(len(art[0]))*px)/2
 	y0 := r.y + (r.h-int16(len(art))*px)/2
 	for y, row := range art {
@@ -210,7 +247,7 @@ func drawInvaderIcon(l *Launcher, r rect) {
 }
 
 func drawSudokuIcon(l *Launcher, r rect) {
-	const cell = 18
+	cell := r.h * 18 / 56
 	x0 := r.x + (r.w-3*cell)/2
 	y0 := r.y + (r.h-3*cell)/2
 	for i := int16(0); i <= 3; i++ {
@@ -221,12 +258,12 @@ func drawSudokuIcon(l *Launcher, r rect) {
 		c, r int16
 		s    string
 	}{{0, 0, "5"}, {2, 0, "3"}, {1, 1, "9"}, {0, 2, "7"}, {2, 2, "1"}} {
-		tinyfont.WriteLine(l.d, &freesans.Bold9pt7b, x0+d.c*cell+5, y0+d.r*cell+16, d.s, digitColor)
+		tinyfont.WriteLine(l.d, &freesans.Bold9pt7b, x0+d.c*cell+(cell-9)/2+1, y0+d.r*cell+(cell+12)/2+1, d.s, digitColor)
 	}
 }
 
 func drawOthelloIcon(l *Launcher, r rect) {
-	const cell = 27
+	cell := r.h * 27 / 56
 	x0 := r.x + (r.w-2*cell)/2
 	y0 := r.y + (r.h-2*cell)/2
 	l.d.FillRectangle(x0, y0, 2*cell, 2*cell, greenBoard)
@@ -237,13 +274,14 @@ func drawOthelloIcon(l *Launcher, r rect) {
 		if k == 1 || k == 2 {
 			c = color.RGBA{25, 25, 25, 255}
 		}
-		tinydraw.FilledCircle(l.d, cx, cy, 11, c)
+		tinydraw.FilledCircle(l.d, cx, cy, cell*11/27, c)
 	}
 }
 
 func drawSolitaireIcon(l *Launcher, r rect) {
 	// Three fanned cards: a back and two faces.
-	const w, h, step = 46, 54, 16
+	h := r.h - 2
+	w, step := h*46/54, h*16/54
 	x0 := r.x + (r.w-w-2*step)/2
 	y0 := r.y + (r.h-h)/2
 	cards.DrawBack(l.d, x0, y0, w, h)
@@ -253,7 +291,8 @@ func drawSolitaireIcon(l *Launcher, r rect) {
 
 func drawPokerIcon(l *Launcher, r rect) {
 	// A royal flush, fanned; only the corners of the first four show.
-	const w, h, step = 38, 54, 16
+	h := r.h - 2
+	w, step := h*38/54, h*16/54
 	x0 := r.x + (r.w-w-4*step)/2
 	y0 := r.y + (r.h-h)/2
 	for k, rank := range []int{10, 11, 12, 13, 1} {

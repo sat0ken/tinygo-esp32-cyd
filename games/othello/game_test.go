@@ -3,6 +3,7 @@ package othello
 import (
 	"math/bits"
 	"testing"
+	"time"
 
 	"github.com/sat0ken/tinygo-cyd/board"
 	"github.com/sat0ken/tinygo-cyd/internal/goldentest"
@@ -11,10 +12,25 @@ import (
 
 const dt = float32(0.05)
 
+// sizes are the screens the game has a layout for; golden is the prefix of
+// the golden images.
+var sizes = []struct {
+	w, h   int16
+	golden string
+}{
+	{board.Width, board.Height, "othello_"}, // ESP32-4827S043, ESP32-3248S035C
+	{320, 240, "othello_small_"},            // ESP32-2432S028R
+}
+
 func newTestGame() (*Game, *memlcd.Display, *memlcd.Touch) {
-	d := memlcd.New(board.Width, board.Height)
+	return newTestGameSize(board.Width, board.Height)
+}
+
+func newTestGameSize(w, h int16) (*Game, *memlcd.Display, *memlcd.Touch) {
+	d := memlcd.New(w, h)
 	touch := &memlcd.Touch{}
 	g := NewGame(d, touch, 7)
+	g.Now = func() time.Time { return time.Time{} } // "0ms" on the screen
 	g.DrawMenu()
 	return g, d, touch
 }
@@ -46,33 +62,82 @@ func settle(t *testing.T, g *Game) {
 func stones(g *Game) int { return bits.OnesCount64(g.pos.Me | g.pos.Opp) }
 
 func TestMenuScreen(t *testing.T) {
-	_, d, _ := newTestGame()
-	goldentest.Check(t, "othello_menu", d.Image())
+	for _, s := range sizes {
+		g, d, _ := newTestGameSize(s.w, s.h)
+		if s.w == 320 {
+			g.OnExit = func() {} // the "< GAMES" button must clear the title
+			g.DrawMenu()
+		}
+		goldentest.Check(t, s.golden+"menu", d.Image())
+	}
 }
 
 func TestStartScreen(t *testing.T) {
-	g, d, touch := newTestGame()
-	tapRect(g, touch, levelButton(1)) // NORMAL, player is black
-	settle(t, g)
-	if g.phase != humanTurn || stones(g) != 4 {
-		t.Fatalf("phase %d stones %d", g.phase, stones(g))
+	for _, s := range sizes {
+		g, d, touch := newTestGameSize(s.w, s.h)
+		tapRect(g, touch, g.l.levelButton(1)) // NORMAL, player is black
+		settle(t, g)
+		if g.phase != humanTurn || stones(g) != 4 {
+			t.Fatalf("phase %d stones %d", g.phase, stones(g))
+		}
+		goldentest.Check(t, s.golden+"start", d.Image())
 	}
-	goldentest.Check(t, "othello_start", d.Image())
+}
+
+// TestLayout checks that everything is on the screen and that nothing that
+// can be tapped overlaps.
+func TestLayout(t *testing.T) {
+	for _, s := range sizes {
+		l := layoutFor(s.w, s.h)
+		screen := rect{0, 0, s.w, s.h}
+		panel := rect{l.panelX, 0, l.panelW, l.undo.y - 8}
+		taps := []rect{l.boardRect(), l.undo, l.new, panel}
+		all := append([]rect{backButton(), l.colorButton(0), l.colorButton(1)}, taps...)
+		for k := range levels {
+			all = append(all, l.levelButton(k))
+		}
+		for _, r := range all {
+			if !inside(r, screen) {
+				t.Errorf("%dx%d: %v is off the screen", s.w, s.h, r)
+			}
+		}
+		for i, a := range taps {
+			for _, b := range taps[i+1:] {
+				if overlap(a, b) {
+					t.Errorf("%dx%d: %v overlaps %v", s.w, s.h, a, b)
+				}
+			}
+		}
+	}
+}
+
+func inside(r, outer rect) bool {
+	return r.x >= outer.x && r.y >= outer.y && r.x+r.w <= outer.x+outer.w && r.y+r.h <= outer.y+outer.h
+}
+
+func overlap(a, b rect) bool {
+	return a.x < b.x+b.w && b.x < a.x+a.w && a.y < b.y+b.h && b.y < a.y+a.h
 }
 
 func TestMoveAndCPUReply(t *testing.T) {
-	g, d, touch := newTestGame()
-	tapRect(g, touch, levelButton(1))
+	for _, s := range sizes {
+		testMoveAndCPUReply(t, s.w, s.h)
+	}
+}
+
+func testMoveAndCPUReply(t *testing.T, w, h int16) {
+	g, d, touch := newTestGameSize(w, h)
+	tapRect(g, touch, g.l.levelButton(1))
 	settle(t, g)
 
 	// An illegal square (a1) is ignored.
-	tapRect(g, touch, squareRect(0))
+	tapRect(g, touch, g.l.squareRect(0))
 	if g.phase != humanTurn || stones(g) != 4 {
 		t.Fatal("illegal move was played")
 	}
 
 	// d3 is legal for black.
-	tapRect(g, touch, squareRect(sq("d3")))
+	tapRect(g, touch, g.l.squareRect(sq("d3")))
 	settle(t, g)
 	if stones(g) != 6 || !g.blackMove || g.phase != humanTurn {
 		t.Fatalf("after one move each: stones %d blackMove %v phase %d", stones(g), g.blackMove, g.phase)
@@ -84,13 +149,13 @@ func TestMoveAndCPUReply(t *testing.T) {
 		}
 	}
 	// The CPU's last move has the red dot drawn at its centre.
-	r := squareRect(g.last)
+	r := g.l.squareRect(g.last)
 	if got := d.Pixel(r.x+r.w/2, r.y+r.h/2); got != rgb565(lastColor) {
 		t.Fatalf("last move marker %04x", got)
 	}
 
 	// UNDO goes back to the start position.
-	tapRect(g, touch, undoButton())
+	tapRect(g, touch, g.l.undo)
 	if g.pos != Start() || !g.blackMove || g.phase != humanTurn {
 		t.Fatal("undo did not restore the start")
 	}
@@ -98,8 +163,8 @@ func TestMoveAndCPUReply(t *testing.T) {
 
 func TestPlayAsWhite(t *testing.T) {
 	g, _, touch := newTestGame()
-	tapRect(g, touch, colorButton(1)) // white
-	tapRect(g, touch, levelButton(0))
+	tapRect(g, touch, g.l.colorButton(1)) // white
+	tapRect(g, touch, g.l.levelButton(0))
 	settle(t, g)
 	// The CPU (black) has moved first.
 	if stones(g) != 5 || g.blackMove {
@@ -108,8 +173,14 @@ func TestPlayAsWhite(t *testing.T) {
 }
 
 func TestWholeGame(t *testing.T) {
-	g, _, touch := newTestGame()
-	tapRect(g, touch, levelButton(0)) // EASY
+	for _, s := range sizes {
+		testWholeGame(t, s.w, s.h, s.golden)
+	}
+}
+
+func testWholeGame(t *testing.T, sw, sh int16, golden string) {
+	g, d, touch := newTestGameSize(sw, sh)
+	tapRect(g, touch, g.l.levelButton(0)) // EASY
 	settle(t, g)
 	for moves := 0; g.phase != gameOver; moves++ {
 		if moves > 70 {
@@ -118,7 +189,7 @@ func TestWholeGame(t *testing.T) {
 		// Play the first legal move (passes are handled by the game).
 		m := g.pos.Moves()
 		s := bits.TrailingZeros64(m)
-		tapRect(g, touch, squareRect(s))
+		tapRect(g, touch, g.l.squareRect(s))
 		settle(t, g)
 	}
 	b, w := g.counts()
@@ -126,7 +197,10 @@ func TestWholeGame(t *testing.T) {
 	if b+w > 64 || g.message == "" {
 		t.Fatalf("bad end: %d-%d %q", b, w, g.message)
 	}
-	tapRect(g, touch, newButton())
+	if golden == "othello_small_" {
+		goldentest.Check(t, golden+"end", d.Image())
+	}
+	tapRect(g, touch, g.l.new)
 	if g.phase != menu {
 		t.Fatal("NEW did not go back to the menu")
 	}
@@ -134,7 +208,7 @@ func TestWholeGame(t *testing.T) {
 
 func TestHumanPasses(t *testing.T) {
 	g, _, touch := newTestGame()
-	tapRect(g, touch, levelButton(1))
+	tapRect(g, touch, g.l.levelButton(1))
 	settle(t, g)
 	// Black (the player) to move but without a legal move; white can move.
 	// Black b2; white on the diagonal c3..h8 up to the edge, so black cannot

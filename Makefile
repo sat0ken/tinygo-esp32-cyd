@@ -20,7 +20,9 @@ S035_PKGS := ./examples/s035_check ./examples/03_tinydraw ./examples/07_breakout
 # ESP32-2432S028R (2.8" ILI9341 320x240, XPT2046 touch): only the programs
 # that adapt to the screen size (the games need 480x272).
 S028      := ./targets/esp32-2432s028r.json
-S028_PKGS := ./examples/s028_check ./cmd/app ./examples/joystick_check
+S028_PKGS := ./examples/s028_check ./examples/08_invaders ./examples/09_sudoku \
+	./examples/10_othello ./examples/11_solitaire ./examples/12_poker ./cmd/app \
+	./cmd/games ./examples/joystick_check
 
 .PHONY: flash flash-noerase flash-slides flash-s035 flash-s028 monitor build examples examples-s035 examples-s028 wasm serve test test-browser update-golden slides clean
 

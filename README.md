@@ -168,14 +168,15 @@ Sunton ESP32-2432S028R（いわゆる Cheap Yellow Display）：ESP32（PSRAM �
 ```sh
 make flash-s028 PKG=./examples/s028_check   # まずこれで液晶とタッチを確認
 make flash-s028 PKG=./cmd/app               # お絵描きアプリ（320×240 用の配置）
+make flash-s028 PKG=./cmd/games             # ゲーム（320×240 用の配置）
 make examples-s028                          # この基板で動く全プログラムのビルド確認
 ```
 
 - LCDwiki の「2.8inch ESP32-32E Display」（E32R28T、USB Type-C・電池端子つき）も、液晶・タッチ・SD のピンが同じなので同じターゲットで動く。違うのは RGB LED の赤（IO22）、IO4（スピーカーアンプの有効化、Low で有効）、IO34（電池電圧）だけ（board/s028 の `E32R28T*`）。
 - 液晶は 3.5インチ版と同じ `spilcd`（初期化手順だけ ILI9341 用）。タッチは S043 と同じ `xpttouch`（ピンは別）。
-- 画面が 480×272 より小さいので、ゲーム（cmd/games・07〜12）は動かない。`platform.Init()` は画面全体（320×240）を返し、画面の大きさに合わせて描くプログラム（s028_check、cmd/app）だけが動く。
+- `platform.Init()` は画面全体（320×240）を返す。ゲーム（cmd/games・08〜12）とお絵描きアプリは画面の大きさから配置を選び、320×240 用の配置で動く（ゴールデン画像は `*_small_*`）。インベーダーはスプライトを 1.5 倍で描く（480×272 では 2 倍）。07_breakout は 480×272 のままなので動かない。
 - 表示（色・向き）は ESP32-2432S028R と E32R28T の両方で確認済み。速さは全画面の塗りつぶし 39ms、文字 300 字 139ms（E32R28T、SPI 40MHz）。
-- タッチのキャリブレーション（`TouchRaw*`）は資料からの推測のまま。s028_check の `k` で測って board/s028 に書く。
+- タッチのキャリブレーション（`TouchRaw*`）は E32R28T で s028_check の `k` で測った値。ずれるときは同じように測って board/s028 に書く。
 - 液晶の ID の読み出しは、MISO がつながっているのに全部 0 だった。TinyGo の ESP32 の SPI で読み出しができていないらしい（SD カードを使うときに調べる）。
 - バックライト（GPIO21）は点灯・消灯のみ。
 

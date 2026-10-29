@@ -12,8 +12,17 @@ import (
 
 const dt = float32(1.0 / 60)
 
-func newTestLauncher() (*Launcher, *memlcd.Display, *memlcd.Touch) {
-	d := memlcd.New(board.Width, board.Height)
+// sizes are the screens the launcher has a layout for.
+var sizes = []struct {
+	w, h   int16
+	golden string
+}{
+	{board.Width, board.Height, "games_"}, // ESP32-4827S043, ESP32-3248S035C
+	{320, 240, "games_small_"},            // ESP32-2432S028R
+}
+
+func newTestLauncher(w, h int16) (*Launcher, *memlcd.Display, *memlcd.Touch) {
+	d := memlcd.New(w, h)
 	touch := &memlcd.Touch{}
 	seed := uint32(3)
 	l := NewLauncher(d, touch, func() uint32 { seed++; return seed })
@@ -35,8 +44,10 @@ func tap(l *Launcher, touch *memlcd.Touch, x, y int16) {
 }
 
 func TestMenu(t *testing.T) {
-	_, d, _ := newTestLauncher()
-	goldentest.Check(t, "games_menu", d.Image())
+	for _, s := range sizes {
+		_, d, _ := newTestLauncher(s.w, s.h)
+		goldentest.Check(t, s.golden+"menu", d.Image())
+	}
 }
 
 func TestStartEachGameAndComeBack(t *testing.T) {
@@ -59,9 +70,31 @@ func TestStartEachGameAndComeBack(t *testing.T) {
 		"SOLITAIRE": {60, 150},
 		"POKER":     {200, 238},
 	}
+	testStartEachGameAndComeBack(t, board.Width, board.Height, backs, taps)
+}
+
+func TestStartEachGameAndComeBackSmall(t *testing.T) {
+	backs := map[string][2]int16{
+		"INVADERS":  {320 - 40, 9},
+		"SUDOKU":    {50, 22},
+		"OTHELLO":   {50, 22},
+		"SOLITAIRE": {27, 11},
+		"POKER":     {27, 217},
+	}
+	taps := map[string][2]int16{
+		"INVADERS":  {60, 80},
+		"SUDOKU":    {160, 80},
+		"OTHELLO":   {250, 115},
+		"SOLITAIRE": {25, 150},
+		"POKER":     {138, 215},
+	}
+	testStartEachGameAndComeBack(t, 320, 240, backs, taps)
+}
+
+func testStartEachGameAndComeBack(t *testing.T, w, h int16, backs, taps map[string][2]int16) {
 	for k, e := range entries {
-		l, d, touch := newTestLauncher()
-		r := tileRect(k)
+		l, d, touch := newTestLauncher(w, h)
+		r := l.l.tileRect(k)
 		p := taps[e.name]
 		if !r.has(p[0], p[1]) {
 			t.Fatalf("%s: tap point is not on its tile", e.name)
@@ -80,7 +113,7 @@ func TestStartEachGameAndComeBack(t *testing.T) {
 			t.Fatalf("%s: still playing after tapping < GAMES", e.name)
 		}
 		// The launcher is back on screen and still works.
-		if diff := goldentest.Compare(launcherImage(), d.Image()); diff != "" {
+		if diff := goldentest.Compare(launcherImage(w, h), d.Image()); diff != "" {
 			t.Fatalf("%s: launcher not redrawn: %s", e.name, diff)
 		}
 		tap(l, touch, p[0], p[1])
@@ -91,24 +124,28 @@ func TestStartEachGameAndComeBack(t *testing.T) {
 }
 
 // launcherImage is a freshly drawn launcher screen.
-func launcherImage() *image.RGBA {
-	_, d, _ := newTestLauncher()
+func launcherImage(w, h int16) *image.RGBA {
+	_, d, _ := newTestLauncher(w, h)
 	return d.Image()
 }
 
 func TestTilesFit(t *testing.T) {
-	for k, e := range entries {
-		r := tileRect(k)
-		for _, x := range []struct {
-			font tinyfont.Fonter
-			text string
-		}{{nameFont, e.name}, {aboutFont, e.about}} {
-			if _, w := tinyfont.LineWidth(x.font, x.text); int16(w) > r.w-8 {
-				t.Errorf("%s: %q is %dpx, tile is %dpx", e.name, x.text, w, r.w)
+	for _, s := range sizes {
+		l := layoutFor(s.w, s.h)
+		for k, e := range entries {
+			r := l.tileRect(k)
+			for _, x := range []struct {
+				font tinyfont.Fonter
+				text string
+			}{{nameFont, e.name}, {aboutFont, e.about}} {
+				if _, w := tinyfont.LineWidth(x.font, x.text); int16(w) > r.w-4 {
+					t.Errorf("%dx%d: %s: %q is %dpx, tile is %dpx", s.w, s.h, e.name, x.text, w, r.w)
+				}
 			}
 		}
-	}
-	if last := tileRect(len(entries) - 1); last.x+last.w > board.Width {
-		t.Errorf("tiles end at %d", last.x+last.w)
+		// Five tiles, but the grid has room for six.
+		if last := l.tileRect(5); last.x+last.w > s.w || last.y+last.h > l.footBase-8 {
+			t.Errorf("%dx%d: tiles end at %d,%d", s.w, s.h, last.x+last.w, last.y+last.h)
+		}
 	}
 }

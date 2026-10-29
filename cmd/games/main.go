@@ -8,6 +8,7 @@
 //
 //	make flash-noerase PKG=./cmd/games && make monitor   # ESP32-4827S043
 //	make flash-s035 PKG=./cmd/games                      # ESP32-3248S035C
+//	make flash-s028 PKG=./cmd/games                      # ESP32-2432S028R (320x240 layouts)
 //	make wasm PKG=./cmd/games && make serve
 package main
 

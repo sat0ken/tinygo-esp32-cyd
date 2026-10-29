@@ -1,12 +1,10 @@
 package invaders
 
-// sprite is a 1-bit bitmap, drawn at 2x (every bit is 2x2 pixels).
+// sprite is a 1-bit bitmap, drawn larger (see layout.bit).
 type sprite struct {
 	w, h int16 // in bits
 	bits []bool
 }
-
-const scale = 2
 
 func parseSprite(rows ...string) sprite {
 	s := sprite{w: int16(len(rows[0])), h: int16(len(rows))}
@@ -19,10 +17,6 @@ func parseSprite(rows ...string) sprite {
 }
 
 func (s sprite) on(x, y int16) bool { return s.bits[int(y)*int(s.w)+int(x)] }
-
-// Pixel size on screen.
-func (s sprite) pw() int16 { return s.w * scale }
-func (s sprite) ph() int16 { return s.h * scale }
 
 // The sprites are parsed by parseSprites when the first game is created,
 // not by package initializers: TinyGo cannot run parseSprite at compile
@@ -154,7 +148,7 @@ var ufoArt = []string{
 	"...#........#...",
 }
 
-// Bunker shape in cells (each cell is 4x4 pixels).
+// Bunker shape in cells (layout.bunkerCell pixels square).
 var bunkerShape = []string{
 	"..#######..",
 	".#########.",

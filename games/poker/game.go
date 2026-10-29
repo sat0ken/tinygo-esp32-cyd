@@ -1,5 +1,5 @@
-// Package poker is "Jacks or Better" video poker for a 480x272 touch
-// screen. It depends only on hal: examples/12_poker runs it alone,
+// Package poker is "Jacks or Better" video poker for a 480x272 or 320x240
+// touch screen. It depends only on hal: examples/12_poker runs it alone,
 // cmd/games from a launcher.
 package poker
 
@@ -14,23 +14,7 @@ import (
 	"tinygo.org/x/tinyfont"
 )
 
-// Layout for 480x272: the pay table, the five cards with their HELD
-// labels, and a button bar.
 const (
-	tableY   = 2
-	rowH     = 11
-	nameX    = 12
-	betColX  = 172 // x of the bet-1 column of the pay table
-	betColW  = 60
-	cardW    = 84
-	cardH    = 100
-	cardGap  = 8
-	leftX    = (480 - (5*cardW + 4*cardGap)) / 2
-	cardY    = tableY + 9*rowH + 7
-	labelY   = cardY + cardH + 2 // the HELD labels / the result line
-	labelH   = 22
-	barY     = 234
-	btnH     = 34
 	startCr  = 100
 	tapGap   = 0.15 // seconds; ignore taps closer than this (touch bounce)
 	flipStep = 0.09 // seconds between cards turning over
@@ -55,25 +39,85 @@ type rect struct{ x, y, w, h int16 }
 
 func (r rect) has(x, y int16) bool { return x >= r.x && x < r.x+r.w && y >= r.y && y < r.y+r.h }
 
-func payRect() rect { return rect{4, tableY, 472, 9 * rowH} }
+// button is a button of the bar: where it is and how its name is written
+// (TestTextsFit checks that the names fit).
+type button struct {
+	r    rect
+	font tinyfont.Fonter
+	base int16 // baseline from the top of the button
+}
+
+// layout is where everything is: the pay table, the five cards with their
+// HELD labels, and a button bar.
+type layout struct {
+	pay              rect
+	rowH, rowBase    int16 // a pay table row and the baseline in it
+	nameX            int16
+	betColX, betColW int16 // the bet-1 column of the pay table and the column width
+	numRight         int16 // space right of the numbers in a column
+
+	cardW, cardH, cardGap, leftX, cardY int16
+	labels                              rect // the HELD labels / the result line
+
+	barY                 int16
+	back, bet, max, deal button
+	info                 rect // credit and bet
+	creditFont           tinyfont.Fonter
+	creditBase, betBase  int16
+}
+
+// layoutFor returns the layout for a w x h screen: the 480x272 one, or the
+// 320x240 one (ESP32-2432S028R) on smaller screens.
+func layoutFor(w, h int16) layout {
+	big, small := &freesans.Bold9pt7b, &proggy.TinySZ8pt7b
+	if w >= 480 && h >= 272 {
+		const cardW, cardH, cardY = 84, 100, 2 + 9*11 + 7
+		const barY, btnY, btnH = 234, 236, 34
+		return layout{
+			pay: rect{4, 2, 472, 9 * 11}, rowH: 11, rowBase: 9, nameX: 12,
+			betColX: 172, betColW: 60, numRight: 10,
+			cardW: cardW, cardH: cardH, cardGap: 8, leftX: (480 - (5*cardW + 4*8)) / 2, cardY: cardY,
+			labels: rect{0, cardY + cardH + 2, w, 22},
+			barY:   barY,
+			back:   button{rect{4, btnY, 58, btnH}, small, 21},
+			bet:    button{rect{66, btnY, 90, btnH}, big, 23},
+			max:    button{rect{160, btnY, 90, btnH}, big, 23},
+			deal:   button{rect{380, btnY, 96, btnH}, big, 23},
+			info:   rect{254, btnY, 122, btnH}, creditFont: big, creditBase: 15, betBase: 30,
+		}
+	}
+	// Cards of the solitaire's size; the bar's small buttons use the small
+	// font.
+	const cardW, cardH, cardY = 56, 72, 2 + 9*10 + 5
+	const barY, btnY, btnH = 196, 198, 38
+	return layout{
+		pay: rect{4, 2, w - 8, 9 * 10}, rowH: 10, rowBase: 8, nameX: 6,
+		betColX: 100, betColW: 43, numRight: 7, // "JACKS OR BETTER" is 90 pixels
+		cardW: cardW, cardH: cardH, cardGap: 6, leftX: (w - (5*cardW + 4*6)) / 2, cardY: cardY,
+		labels: rect{0, cardY + cardH + 2, w, 20},
+		barY:   barY,
+		back:   button{rect{2, btnY, 50, btnH}, small, 22},
+		bet:    button{rect{56, btnY, 52, btnH}, small, 22},
+		max:    button{rect{112, btnY, 52, btnH}, small, 22},
+		deal:   button{rect{244, btnY, 74, btnH}, big, 25},
+		info:   rect{168, btnY, 72, btnH}, creditFont: small, creditBase: 15, betBase: 29,
+	}
+}
 
 // cardRect includes the HELD label under the card, so a tap there holds
 // the card too.
-func cardRect(i int) rect {
-	return rect{leftX + int16(i)*(cardW+cardGap), cardY, cardW, cardH + 2 + labelH}
+func (l *layout) cardRect(i int) rect {
+	return rect{l.leftX + int16(i)*(l.cardW+l.cardGap), l.cardY, l.cardW, l.cardH + 2 + l.labels.h}
 }
 
-func backButton() rect { return rect{4, barY + 2, 58, btnH} }
-func betButton() rect  { return rect{66, barY + 2, 90, btnH} }
-func maxButton() rect  { return rect{160, barY + 2, 90, btnH} }
-func infoRect() rect   { return rect{254, barY + 2, 122, btnH} }
-func dealButton() rect { return rect{380, barY + 2, 96, btnH} }
-
-// Fonts of the buttons (TestTextsFit checks that the texts fit).
-var (
-	btnFont  = &freesans.Bold9pt7b
-	backFont = &proggy.TinySZ8pt7b
-)
+// msgFont returns the font and baseline for a message on the label line:
+// the bold font, or the small one if s does not fit.
+func (l *layout) msgFont(s string) (tinyfont.Fonter, int16) {
+	if _, w := tinyfont.LineWidth(&freesans.Bold9pt7b, s); int16(w) <= l.labels.w-8 {
+		return &freesans.Bold9pt7b, 17
+	}
+	return &proggy.TinySZ8pt7b, 14
+}
 
 type phase int
 
@@ -88,6 +132,7 @@ const (
 type Game struct {
 	d hal.Display
 	t hal.Touch
+	l layout
 
 	// NewSeed returns the seed for the shuffles.
 	NewSeed func() uint32
@@ -116,7 +161,8 @@ type Game struct {
 
 // NewGame creates a game; call Start to draw it.
 func NewGame(d hal.Display, t hal.Touch, newSeed func() uint32) *Game {
-	return &Game{d: d, t: t, NewSeed: newSeed, lastTap: -1, credits: startCr, bet: 1}
+	w, h := d.Size()
+	return &Game{d: d, t: t, l: layoutFor(w, h), NewSeed: newSeed, lastTap: -1, credits: startCr, bet: 1}
 }
 
 // Start draws the whole screen, ready for the first deal.
@@ -124,7 +170,7 @@ func (g *Game) Start() {
 	g.rand = cards.NewRand(g.NewSeed())
 	w, h := g.d.Size()
 	g.d.FillRectangle(0, 0, w, h, tableColor)
-	g.d.FillRectangle(0, barY, w, h-barY, barColor)
+	g.d.FillRectangle(0, g.l.barY, w, h-g.l.barY, barColor)
 	g.drawn = map[rect]string{}
 	g.refresh()
 }
@@ -154,29 +200,30 @@ func (g *Game) Update(dt float32) {
 }
 
 func (g *Game) tapAt(x, y int16) {
-	if g.OnExit != nil && backButton().has(x, y) {
+	l := &g.l
+	if g.OnExit != nil && l.back.r.has(x, y) {
 		g.OnExit()
 		return
 	}
 	switch g.phase {
 	case idle:
 		switch {
-		case betButton().has(x, y):
+		case l.bet.r.has(x, y):
 			g.bet = g.bet%MaxBet + 1
 			g.dirty = true
-		case maxButton().has(x, y):
+		case l.max.r.has(x, y):
 			g.bet = MaxBet
 			g.deal()
-		case dealButton().has(x, y):
+		case l.deal.r.has(x, y):
 			g.deal()
 		}
 	case holding:
-		if dealButton().has(x, y) {
+		if l.deal.r.has(x, y) {
 			g.draw()
 			return
 		}
 		for i := range g.round.Held {
-			if cardRect(i).has(x, y) {
+			if l.cardRect(i).has(x, y) {
 				g.round.Held[i] = !g.round.Held[i]
 				g.dirty = true
 			}
@@ -285,31 +332,32 @@ func (g *Game) lit() (Hand, color.RGBA) {
 }
 
 func (g *Game) drawPayTable() {
-	r := payRect()
+	l := &g.l
+	r := l.pay
 	h, hc := g.lit()
 	key := strconv.Itoa(g.bet) + "/" + strconv.Itoa(int(h)) + "/" + strconv.Itoa(int(hc.R))
 	g.region(r, payColor, key, func() {
-		col := rect{betColX + int16(g.bet-1)*betColW, r.y, betColW, r.h}
+		col := rect{l.betColX + int16(g.bet-1)*l.betColW, r.y, l.betColW, r.h}
 		g.d.FillRectangle(col.x, col.y, col.w, col.h, betColumn)
 		for k := RoyalFlush; k >= JacksOrBetter; k-- {
-			y := r.y + int16(RoyalFlush-k)*rowH + 9
+			y := r.y + int16(RoyalFlush-k)*l.rowH + l.rowBase
 			name, pay := textColor, payText
 			if k == h {
 				name, pay = hc, hc
 			}
-			g.text(&proggy.TinySZ8pt7b, nameX, y, k.String(), name)
+			g.text(&proggy.TinySZ8pt7b, l.nameX, y, k.String(), name)
 			for b := 1; b <= MaxBet; b++ {
 				s := strconv.Itoa(Payout(k, b))
 				_, w := tinyfont.LineWidth(&proggy.TinySZ8pt7b, s)
-				g.text(&proggy.TinySZ8pt7b, betColX+int16(b)*betColW-10-int16(w), y, s, pay)
+				g.text(&proggy.TinySZ8pt7b, l.betColX+int16(b)*l.betColW-l.numRight-int16(w), y, s, pay)
 			}
 		}
 	})
 }
 
 func (g *Game) drawCard(i int) {
-	r := cardRect(i)
-	r.h = cardH
+	r := g.l.cardRect(i)
+	r.h = g.l.cardH
 	c := g.round.Hand[i]
 	up := g.dealt && g.faceUp[i]
 	held := up && g.round.Held[i] && g.phase == holding
@@ -332,7 +380,7 @@ func (g *Game) drawCard(i int) {
 // drawLabels draws the HELD labels while holding, otherwise one line
 // across the cards: the result or what to do.
 func (g *Game) drawLabels() {
-	r := rect{0, labelY, 480, labelH}
+	r := g.l.labels
 	var key, msg string
 	msgColor := dimText
 	switch {
@@ -366,35 +414,35 @@ func (g *Game) drawLabels() {
 		if g.phase == holding {
 			for i, h := range g.round.Held {
 				if h {
-					g.centered(cardRect(i), &freesans.Bold9pt7b, "HELD", winColor, cardH+18)
+					g.centered(g.l.cardRect(i), &freesans.Bold9pt7b, "HELD", winColor, g.l.cardH+18)
 				}
 			}
 			return
 		}
-		g.centered(r, &freesans.Bold9pt7b, msg, msgColor, 17)
+		font, base := g.l.msgFont(msg)
+		g.centered(r, font, msg, msgColor, base)
 	})
 }
 
 func (g *Game) drawButtons() {
-	type button struct {
-		r     rect
-		name  string
-		on    bool // usable now
-		color color.RGBA
-		font  tinyfont.Fonter
-		base  int16
-	}
+	l := &g.l
 	deal := "DEAL"
 	if g.phase == holding || g.phase == drawing {
 		deal = "DRAW"
 	}
-	buttons := []button{
-		{betButton(), "BET ONE", g.phase == idle, btnColor, btnFont, 23},
-		{maxButton(), "MAX BET", g.phase == idle, btnColor, btnFont, 23},
-		{dealButton(), deal, g.phase == idle || g.phase == holding, dealColor, btnFont, 23},
+	buttons := []struct {
+		button
+		name  string
+		on    bool // usable now
+		color color.RGBA
+	}{
+		{l.bet, "BET ONE", g.phase == idle, btnColor},
+		{l.max, "MAX BET", g.phase == idle, btnColor},
+		{l.deal, deal, g.phase == idle || g.phase == holding, dealColor},
+		{l.back, "< GAMES", true, btnColor},
 	}
-	if g.OnExit != nil {
-		buttons = append(buttons, button{backButton(), "< GAMES", true, btnColor, backFont, 21})
+	if g.OnExit == nil {
+		buttons = buttons[:3]
 	}
 	for _, b := range buttons {
 		key := b.name
@@ -411,11 +459,11 @@ func (g *Game) drawButtons() {
 		})
 	}
 
-	r := infoRect()
+	r := l.info
 	credit := "CREDIT " + strconv.Itoa(g.credits)
 	bet := "BET " + strconv.Itoa(g.bet)
 	g.region(r, barColor, credit+"/"+bet, func() {
-		g.centered(r, btnFont, credit, textColor, 15)
-		g.centered(r, &proggy.TinySZ8pt7b, bet, payText, 30)
+		g.centered(r, l.creditFont, credit, textColor, l.creditBase)
+		g.centered(r, &proggy.TinySZ8pt7b, bet, payText, l.betBase)
 	})
 }

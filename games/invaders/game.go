@@ -1,6 +1,6 @@
-// Package invaders is a space invaders game for a 480x272 touch screen.
-// It depends only on hal: examples/08_invaders runs it alone, cmd/games
-// from a launcher.
+// Package invaders is a space invaders game for a 480x272 or 320x240 touch
+// screen. It depends only on hal: examples/08_invaders runs it alone,
+// cmd/games from a launcher.
 package invaders
 
 import (
@@ -12,32 +12,12 @@ import (
 	"tinygo.org/x/tinyfont"
 )
 
-// Layout for 480x272.
 const (
-	hudH = 20
+	cols = 11
+	rows = 5
 
-	cols   = 11
-	rows   = 5
-	cellW  = 32 // horizontal spacing of the formation
-	cellH  = 24 // vertical spacing
-	invW   = 24 // widest invader (12 bits x 2)
-	invH   = 16
-	formX0 = 64 // left edge of the first column
-	formY0 = 44 // top of the first row at wave 1
-	stepX  = 4  // horizontal move of one invader
-	dropY  = 8  // move down at the edges
-	edge   = 4  // margin to the screen edge
-
-	ufoY = 24
-
-	bunkers    = 4
-	bunkerY    = 190
-	bunkerCell = 4 // pixels per bunker cell
-
-	bulletSpeed = 360 // pixels per second
-	bombSpeed   = 120
-	maxBombs    = 3
-	ufoSpeed    = 70
+	bunkers  = 4
+	maxBombs = 3
 
 	lives0        = 3
 	movesPerSec   = 60 // invaders moved per second (one at a time)
@@ -67,6 +47,80 @@ var (
 	rowKinds   = [rows]int{0, 1, 1, 2, 2}
 	ufoPoints  = [4]int{50, 100, 150, 300}
 )
+
+// layout is the size of everything. The sprites are drawn num/den pixels
+// per bit: 2 on 480x272, 1.5 on 320x240, where 11 columns of 2x invaders
+// would leave the formation almost no room to march.
+type layout struct {
+	num, den       int16
+	hudH, hudBase  int16
+	hudSep         string // between the items of the HUD
+	cellW, cellH   int16  // spacing of the formation
+	invW, invH     int16  // widest invader
+	formX0, formY0 int16  // left edge of the first column, top of the first row at wave 1
+	stepX, dropY   int16  // horizontal move of one invader, move down at the edges
+	edge           int16  // margin to the screen edge
+	ufoY           int16
+	bunkerY        int16
+	bunkerCell     int16 // pixels per bunker cell
+	shotH          int16
+
+	bulletSpeed, bombSpeed, ufoSpeed float32 // pixels per second
+
+	msg rect // the line for "TAP TO START" and the like
+}
+
+// layoutFor returns the layout for a w x h screen: the 480x272 one, or the
+// 320x240 one (ESP32-2432S028R) on smaller screens.
+func layoutFor(w, h int16) layout {
+	if w >= 480 && h >= 272 {
+		return layout{
+			num: 2, den: 1, hudH: 20, hudBase: 14, hudSep: "   ",
+			cellW: 32, cellH: 24, invW: 24, invH: 16, formX0: 64, formY0: 44,
+			stepX: 4, dropY: 8, edge: 4, ufoY: 24, bunkerY: 190, bunkerCell: 4, shotH: 8,
+			bulletSpeed: 360, bombSpeed: 120, ufoSpeed: 70,
+			msg: rect{80, 164, w - 160, 20},
+		}
+	}
+	// The formation is 10*22+18 = 238 pixels wide and has 76 pixels to
+	// march, about as many steps as on the big screen.
+	return layout{
+		num: 3, den: 2, hudH: 18, hudBase: 13, hudSep: " ",
+		cellW: 22, cellH: 18, invW: 18, invH: 12, formX0: 40, formY0: 36,
+		stepX: 3, dropY: 6, edge: 3, ufoY: 21, bunkerY: 172, bunkerCell: 3, shotH: 6,
+		bulletSpeed: 270, bombSpeed: 90, ufoSpeed: 52,
+		msg: rect{10, 148, w - 20, 20},
+	}
+}
+
+// pw and ph are the size of sp on the screen.
+func (l *layout) pw(sp *sprite) int16 { return l.size(sp.w) }
+func (l *layout) ph(sp *sprite) int16 { return l.size(sp.h) }
+
+// size is the number of pixels for n bits. When the scale is not whole it
+// is odd for an odd n, so that the middle bit has a pixel of its own.
+func (l *layout) size(n int16) int16 {
+	p := n * l.num / l.den
+	if l.num%l.den != 0 && (p-n)%2 != 0 {
+		p++
+	}
+	return p
+}
+
+// bit returns the bit of a sprite w bits wide (or high) under pixel p of
+// its drawing, or -1. When the scale is not whole, some bits get one pixel
+// more than others; the pattern is mirrored at the middle so that
+// symmetric sprites stay symmetric.
+func (l *layout) bit(p, w int16) int16 {
+	pw := l.size(w)
+	switch {
+	case p < 0 || p >= pw:
+		return -1
+	case 2*p < pw:
+		return p * w / pw
+	}
+	return w - 1 - (pw-1-p)*w/pw
+}
 
 type state int
 
@@ -124,6 +178,7 @@ type Game struct {
 	bd   bitmapDrawer
 	t    hal.Touch
 	w, h int16
+	l    layout
 
 	// OnExit, if set, shows a "< GAMES" button on the title and game over
 	// screens; tapping it calls OnExit (used by the cmd/games launcher).
@@ -174,7 +229,7 @@ func NewGame(d hal.Display, t hal.Touch, seed uint32) *Game {
 	if seed == 0 {
 		seed = 1
 	}
-	g := &Game{d: d, bd: bd, t: t, w: w, h: h, rng: seed, buf: make([]byte, 64*32*2)}
+	g := &Game{d: d, bd: bd, t: t, w: w, h: h, l: layoutFor(w, h), rng: seed, buf: make([]byte, 64*32*2)}
 	g.reset()
 	return g
 }
@@ -188,7 +243,7 @@ func (g *Game) rand() uint32 {
 }
 
 func (g *Game) groundY() int16 { return g.h - 4 }
-func (g *Game) cannonY() int16 { return g.groundY() - 2 - cannonSprite.ph() }
+func (g *Game) cannonY() int16 { return g.groundY() - 2 - g.l.ph(&cannonSprite) }
 
 func (g *Game) reset() {
 	g.score, g.lives, g.wave = 0, lives0, 1
@@ -207,7 +262,7 @@ func (g *Game) showBack() bool {
 	return g.OnExit != nil && (g.state == ready || g.state == gameOver)
 }
 
-func (g *Game) backRect() rect { return rect{g.w - 76, 2, 72, hudH - 4} }
+func (g *Game) backRect() rect { return rect{g.w - 76, 2, 72, g.l.hudH - 4} }
 
 // Status returns the score, lives, wave and invaders left, for logging.
 func (g *Game) Status() string {
@@ -216,22 +271,23 @@ func (g *Game) Status() string {
 }
 
 func (g *Game) newWave() {
-	down := int16(g.wave-1) * dropY
-	if down > 4*dropY {
-		down = 4 * dropY
+	l := &g.l
+	down := int16(g.wave-1) * l.dropY
+	if down > 4*l.dropY {
+		down = 4 * l.dropY
 	}
 	for r := 0; r < rows; r++ {
 		for c := 0; c < cols; c++ {
 			g.inv[r][c] = invader{
 				alive: true,
 				kind:  rowKinds[r],
-				x:     formX0 + int16(c)*cellW,
-				y:     formY0 + down + int16(r)*cellH,
+				x:     l.formX0 + int16(c)*l.cellW,
+				y:     l.formY0 + down + int16(r)*l.cellH,
 			}
 		}
 	}
 	g.alive = rows * cols
-	g.dx, g.hitEdge, g.dropping, g.moveIdx, g.moveAcc = stepX, false, false, 0, 0
+	g.dx, g.hitEdge, g.dropping, g.moveIdx, g.moveAcc = l.stepX, false, false, 0, 0
 	for i := range g.bunker {
 		for y, row := range bunkerShape {
 			for x, c := range row {
@@ -244,7 +300,7 @@ func (g *Game) newWave() {
 	g.ufoOn, g.ufoShown = false, false
 	g.nextUFO = g.now + 15
 	g.expl = g.expl[:0]
-	g.cannonX = (g.w - cannonSprite.pw()) / 2
+	g.cannonX = (g.w - g.l.pw(&cannonSprite)) / 2
 }
 
 // ---- drawing helpers ----
@@ -274,7 +330,7 @@ func (g *Game) blit(sp *sprite, sx, sy int16, area rect, fg color.RGBA) {
 		// Too large for one transfer: clear, then draw the sprite alone.
 		g.d.FillRectangle(area.x, area.y, area.w, area.h, bgColor)
 		if sp != nil {
-			sr := rect{sx, sy, sp.pw(), sp.ph()}
+			sr := rect{sx, sy, g.l.pw(sp), g.l.ph(sp)}
 			if int(sr.w)*int(sr.h)*2 <= len(g.buf) && g.bd != nil {
 				g.blit(sp, sx, sy, sr, fg)
 			}
@@ -286,11 +342,14 @@ func (g *Game) blit(sp *sprite, sx, sy int16, area rect, fg color.RGBA) {
 	buf := g.buf[:int(area.w)*int(area.h)*2]
 	i := 0
 	for y := area.y; y < area.y+area.h; y++ {
+		by := int16(-1)
+		if sp != nil {
+			by = g.l.bit(y-sy, sp.h)
+		}
 		for x := area.x; x < area.x+area.w; x++ {
 			v := bg
-			if sp != nil {
-				bx, by := (x-sx)/scale, (y-sy)/scale
-				if x >= sx && y >= sy && bx < sp.w && by < sp.h && sp.on(bx, by) {
+			if by >= 0 {
+				if bx := g.l.bit(x-sx, sp.w); bx >= 0 && sp.on(bx, by) {
 					v = fc
 				}
 			}
@@ -310,7 +369,8 @@ func (g *Game) invSprite(v *invader) *sprite { return &invaderSprites[v.kind][v.
 // spriteRect is where the sprite of v is (centred in its cell).
 func (g *Game) spriteRect(v *invader) rect {
 	sp := g.invSprite(v)
-	return rect{v.x + (invW-sp.pw())/2, v.y, sp.pw(), sp.ph()}
+	w := g.l.pw(sp)
+	return rect{v.x + (g.l.invW-w)/2, v.y, w, g.l.ph(sp)}
 }
 
 func (g *Game) drawInvader(v *invader, area rect) {
@@ -334,11 +394,12 @@ func (g *Game) redrawInvadersIn(r rect) {
 }
 
 func (g *Game) bunkerX(i int) int16 {
-	return g.w*int16(i+1)/(bunkers+1) - int16(len(bunkerShape[0]))*bunkerCell/2
+	return g.w*int16(i+1)/(bunkers+1) - int16(len(bunkerShape[0]))*g.l.bunkerCell/2
 }
 
 func (g *Game) cellRect(i, y, x int) rect {
-	return rect{g.bunkerX(i) + int16(x)*bunkerCell, bunkerY + int16(y)*bunkerCell, bunkerCell, bunkerCell}
+	c := g.l.bunkerCell
+	return rect{g.bunkerX(i) + int16(x)*c, g.l.bunkerY + int16(y)*c, c, c}
 }
 
 // DrawAll draws the whole screen.
@@ -389,11 +450,12 @@ func (g *Game) Update(dt float32) {
 	}
 
 	if pressed && (g.state == ready || g.state == playing) {
-		cx := x - cannonSprite.pw()/2
+		cw := g.l.pw(&cannonSprite)
+		cx := x - cw/2
 		if cx < 0 {
 			cx = 0
 		}
-		if max := g.w - cannonSprite.pw(); cx > max {
+		if max := g.w - cw; cx > max {
 			cx = max
 		}
 		g.cannonX = cx
@@ -419,7 +481,7 @@ func (g *Game) Update(dt float32) {
 		}
 	case dying:
 		if g.now-g.stateT >= dyingTime {
-			g.d.FillRectangle(g.cannonX, g.cannonY(), cannonSprite.pw(), cannonSprite.ph(), bgColor)
+			g.d.FillRectangle(g.cannonX, g.cannonY(), g.l.pw(&cannonSprite), g.l.ph(&cannonSprite), bgColor)
 			g.drawnCannon = -1
 			if g.lives == 0 {
 				g.setState(gameOver)
@@ -450,29 +512,29 @@ func (g *Game) Update(dt float32) {
 
 func (g *Game) fire() {
 	g.bullet.active = true
-	g.bullet.x = float32(g.cannonX + cannonSprite.pw()/2 - 1)
-	g.bullet.y = float32(g.cannonY() - 8)
+	g.bullet.x = float32(g.cannonX + g.l.pw(&cannonSprite)/2 - 1)
+	g.bullet.y = float32(g.cannonY() - g.l.shotH)
 }
 
-func bulletRect(s *shot) rect { return rect{int16(s.x), int16(s.y), 2, 8} }
+func (g *Game) bulletRect(s *shot) rect { return rect{int16(s.x), int16(s.y), 2, g.l.shotH} }
 
 // moveBullet moves the cannon's shot up in steps of 4 pixels, so it
 // cannot skip over anything.
 func (g *Game) moveBullet(dt float32) {
 	b := &g.bullet
-	for dist := bulletSpeed * dt; b.active && dist > 0; dist -= 4 {
+	for dist := g.l.bulletSpeed * dt; b.active && dist > 0; dist -= 4 {
 		step := float32(4)
 		if dist < step {
 			step = dist
 		}
 		b.y -= step
-		if b.y < hudH+2 {
+		if b.y < float32(g.l.hudH+2) {
 			b.active = false
 			return
 		}
-		br := bulletRect(b)
+		br := g.bulletRect(b)
 		if g.ufoOn {
-			ur := rect{int16(g.ufoX), ufoY, ufoSprite.pw(), ufoSprite.ph()}
+			ur := g.ufoRect()
 			if br.overlaps(ur) {
 				b.active = false
 				g.ufoOn = false
@@ -499,7 +561,7 @@ func (g *Game) moveBullet(dt float32) {
 			return
 		}
 		for k := range g.bombs {
-			if bm := &g.bombs[k]; bm.active && br.overlaps(bulletRect(bm)) {
+			if bm := &g.bombs[k]; bm.active && br.overlaps(g.bulletRect(bm)) {
 				b.active, bm.active = false, false
 				return
 			}
@@ -512,7 +574,7 @@ func (g *Game) kill(v *invader) {
 	g.alive--
 	g.score += kindPoints[v.kind]
 	g.hudDirty = true
-	g.explode(rect{v.x, v.y, invW, invH})
+	g.explode(rect{v.x, v.y, g.l.invW, g.l.invH})
 	if g.alive == 0 {
 		g.setState(cleared)
 	}
@@ -520,9 +582,10 @@ func (g *Game) kill(v *invader) {
 
 // explode clears r and shows the explosion sprite centred in it.
 func (g *Game) explode(r rect) {
-	ex := r.x + (r.w-explosionSprite.pw())/2
-	ey := r.y + (r.h-explosionSprite.ph())/2
-	area := union(r, rect{ex, ey, explosionSprite.pw(), explosionSprite.ph()})
+	ew, eh := g.l.pw(&explosionSprite), g.l.ph(&explosionSprite)
+	ex := r.x + (r.w-ew)/2
+	ey := r.y + (r.h-eh)/2
+	area := union(r, rect{ex, ey, ew, eh})
 	g.blit(&explosionSprite, ex, ey, area, explColor)
 	g.expl = append(g.expl, explosion{r: area, until: g.now + explosionTime})
 }
@@ -543,7 +606,7 @@ func (g *Game) updateExplosions() {
 
 // hitBunker removes the first bunker cell r touches.
 func (g *Game) hitBunker(r rect) bool {
-	if r.y+r.h <= bunkerY || r.y >= bunkerY+8*bunkerCell {
+	if r.y+r.h <= g.l.bunkerY || r.y >= g.l.bunkerY+8*g.l.bunkerCell {
 		return false
 	}
 	for i := range g.bunker {
@@ -589,7 +652,7 @@ func (g *Game) dropBomb() {
 			}
 			for i := range g.bombs {
 				if !g.bombs[i].active {
-					g.bombs[i] = shot{active: true, x: float32(v.x + invW/2 - 1), y: float32(v.y + invH),
+					g.bombs[i] = shot{active: true, x: float32(v.x + g.l.invW/2 - 1), y: float32(v.y + g.l.invH),
 						drawn: g.bombs[i].drawn, shown: g.bombs[i].shown}
 					return
 				}
@@ -600,16 +663,16 @@ func (g *Game) dropBomb() {
 }
 
 func (g *Game) moveBombs(dt float32) {
-	cr := rect{g.cannonX, g.cannonY(), cannonSprite.pw(), cannonSprite.ph()}
+	cr := rect{g.cannonX, g.cannonY(), g.l.pw(&cannonSprite), g.l.ph(&cannonSprite)}
 	for i := range g.bombs {
 		b := &g.bombs[i]
-		for dist := bombSpeed * dt; b.active && dist > 0; dist -= 4 {
+		for dist := g.l.bombSpeed * dt; b.active && dist > 0; dist -= 4 {
 			step := float32(4)
 			if dist < step {
 				step = dist
 			}
 			b.y += step
-			br := bulletRect(b)
+			br := g.bulletRect(b)
 			if br.y+br.h >= g.groundY() {
 				b.active = false
 			} else if g.hitBunker(br) {
@@ -630,7 +693,7 @@ func (g *Game) cannonHit() {
 	}
 	g.bullet.active = false
 	g.blit(&explosionSprite, g.cannonX, g.cannonY(),
-		rect{g.cannonX, g.cannonY(), cannonSprite.pw(), cannonSprite.ph()}, cannonColor)
+		rect{g.cannonX, g.cannonY(), g.l.pw(&cannonSprite), g.l.ph(&cannonSprite)}, cannonColor)
 	g.drawnCannon = -2 // the explosion is there now
 	g.setState(dying)
 }
@@ -640,15 +703,15 @@ func (g *Game) moveUFO(dt float32) {
 		if g.now >= g.nextUFO {
 			g.ufoOn = true
 			if g.rand()%2 == 0 {
-				g.ufoDir, g.ufoX = 1, -float32(ufoSprite.pw())
+				g.ufoDir, g.ufoX = 1, -float32(g.l.pw(&ufoSprite))
 			} else {
 				g.ufoDir, g.ufoX = -1, float32(g.w)
 			}
 		}
 		return
 	}
-	g.ufoX += g.ufoDir * ufoSpeed * dt
-	if g.ufoX > float32(g.w) || g.ufoX < -float32(ufoSprite.pw()) {
+	g.ufoX += g.ufoDir * g.l.ufoSpeed * dt
+	if g.ufoX > float32(g.w) || g.ufoX < -float32(g.l.pw(&ufoSprite)) {
 		g.ufoOn = false
 		g.nextUFO = g.now + 20 + float32(g.rand()%10)
 	}
@@ -674,7 +737,7 @@ func (g *Game) stepInvader() {
 	v := g.invAt(g.moveIdx)
 	old := g.spriteRect(v)
 	if g.dropping {
-		v.y += dropY
+		v.y += g.l.dropY
 	} else {
 		v.x += g.dx
 	}
@@ -682,11 +745,12 @@ func (g *Game) stepInvader() {
 	nr := g.spriteRect(v)
 	g.drawInvader(v, union(old, nr))
 
-	if !g.dropping && ((g.dx > 0 && v.x+invW+g.dx > g.w-edge) || (g.dx < 0 && v.x+g.dx < edge)) {
+	l := &g.l
+	if !g.dropping && ((g.dx > 0 && v.x+l.invW+g.dx > g.w-l.edge) || (g.dx < 0 && v.x+g.dx < l.edge)) {
 		g.hitEdge = true
 	}
 	g.erodeBunkers(nr)
-	if v.y+invH >= g.cannonY() {
+	if v.y+l.invH >= g.cannonY() {
 		// Invaded: game over at once.
 		g.lives = 0
 		g.hudDirty = true
@@ -712,14 +776,15 @@ func (g *Game) drawDynamic() {
 	g.drawUFO()
 	if g.hudDirty {
 		g.hudDirty = false
-		g.d.FillRectangle(0, 0, g.w, hudH, hudColor)
-		text := "SCORE " + pad(g.score) + "   HI " + pad(g.hi) +
-			"   LIVES " + strconv.Itoa(g.lives) + "   WAVE " + strconv.Itoa(g.wave)
-		tinyfont.WriteLine(g.d, &proggy.TinySZ8pt7b, 8, 14, text, textColor)
+		l := &g.l
+		g.d.FillRectangle(0, 0, g.w, l.hudH, hudColor)
+		text := "SCORE " + pad(g.score) + l.hudSep + "HI " + pad(g.hi) +
+			l.hudSep + "LIVES " + strconv.Itoa(g.lives) + l.hudSep + "WAVE " + strconv.Itoa(g.wave)
+		tinyfont.WriteLine(g.d, &proggy.TinySZ8pt7b, 8, l.hudBase, text, textColor)
 		if g.showBack() {
 			b := g.backRect()
 			g.d.FillRectangle(b.x, b.y, b.w, b.h, backColor)
-			tinyfont.WriteLine(g.d, &proggy.TinySZ8pt7b, b.x+12, b.y+12, "< GAMES", textColor)
+			tinyfont.WriteLine(g.d, &proggy.TinySZ8pt7b, b.x+12, b.y+b.h-4, "< GAMES", textColor)
 		}
 	}
 	g.drawMessage()
@@ -742,7 +807,7 @@ func (g *Game) drawCannon() {
 		return
 	}
 	y := g.cannonY()
-	nr := rect{x, y, cannonSprite.pw(), cannonSprite.ph()}
+	nr := rect{x, y, g.l.pw(&cannonSprite), g.l.ph(&cannonSprite)}
 	if g.drawnCannon >= 0 {
 		old := rect{g.drawnCannon, y, nr.w, nr.h}
 		if u := union(old, nr); int(u.w)*int(u.h)*2 <= len(g.buf) {
@@ -757,7 +822,7 @@ func (g *Game) drawCannon() {
 }
 
 func (g *Game) drawShot(s *shot, c color.RGBA) {
-	nr := bulletRect(s)
+	nr := g.bulletRect(s)
 	if s.shown && (!s.active || nr != s.drawn) {
 		o := s.drawn
 		g.d.FillRectangle(o.x, o.y, o.w, o.h, bgColor)
@@ -769,8 +834,12 @@ func (g *Game) drawShot(s *shot, c color.RGBA) {
 	}
 }
 
+func (g *Game) ufoRect() rect {
+	return rect{int16(g.ufoX), g.l.ufoY, g.l.pw(&ufoSprite), g.l.ph(&ufoSprite)}
+}
+
 func (g *Game) drawUFO() {
-	nr := rect{int16(g.ufoX), ufoY, ufoSprite.pw(), ufoSprite.ph()}
+	nr := g.ufoRect()
 	if !g.ufoOn {
 		if g.ufoShown {
 			g.d.FillRectangle(g.ufoDrawn.x, g.ufoDrawn.y, g.ufoDrawn.w, g.ufoDrawn.h, bgColor)
@@ -789,8 +858,6 @@ func (g *Game) drawUFO() {
 	g.ufoDrawn, g.ufoShown = nr, true
 }
 
-func (g *Game) msgRect() rect { return rect{80, 164, g.w - 160, 20} }
-
 func (g *Game) drawMessage() {
 	var msg string
 	switch g.state {
@@ -804,7 +871,7 @@ func (g *Game) drawMessage() {
 	if msg == g.msgShown {
 		return
 	}
-	r := g.msgRect()
+	r := g.l.msg
 	g.d.FillRectangle(r.x, r.y, r.w, r.h, bgColor)
 	if msg != "" {
 		_, tw := tinyfont.LineWidth(&proggy.TinySZ8pt7b, msg)
