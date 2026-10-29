@@ -193,6 +193,51 @@ func TestDrawTile4PalMap(t *testing.T) {
 	}
 }
 
+func TestSetPalette(t *testing.T) {
+	c, _, _, _ := newTest(t, Width, Height)
+	c.SetPalette(palette(ColBlack, ColRed, ColBlue, ColWhite))
+	c.DrawRect(0, 0, 1, 1, RGB(250, 10, 10)) // 4 entries only: a new one
+	if a := c.DrawGetPoint(0, 0); a != RGB(250, 10, 10) {
+		t.Errorf("4 entries: %#04x", a)
+	}
+	full := make([]Color, 256)
+	for i := range full {
+		full[i] = ColBlack
+	}
+	full[1], full[2] = ColRed, ColWhite
+	c.SetPalette(palette(full...))
+	c.DrawRect(0, 0, 1, 1, RGB(200, 20, 0)) // the palette is full: the nearest
+	c.DrawRect(1, 0, 1, 1, RGB(200, 20, 0))
+	if a := c.DrawGetPoint(0, 0); a != ColRed {
+		t.Errorf("full: %#04x", a)
+	}
+	c.MapRect(0, 0, 1, 1, func(col Color) Color { return col | 0x07FF })
+	if a, b := c.DrawGetPoint(0, 0), c.DrawGetPoint(1, 0); a != ColWhite || b != ColRed {
+		t.Errorf("MapRect: %#04x %#04x", a, b)
+	}
+}
+
+func TestDrawImgPalDbl(t *testing.T) {
+	c, _, _, _ := newTest(t, Width, Height)
+	pal := palette(ColBlack, ColRed, ColBlue, ColWhite)
+	// 2 x 2: red blue / white black, drawn 4 x 4 from x 0 (the row wraps)
+	c.DrawImgPalDbl("\x01\x02\x03\x00", pal, 0, 0, 0, 0, 4, 4, 4)
+	for _, tc := range []struct {
+		x, y int
+		want Color
+	}{
+		{1, 0, ColRed}, {3, 0, ColBlue},
+		{0, 0, blend2(ColBlue, ColRed)}, {2, 0, blend2(ColRed, ColBlue)},
+		{1, 1, blend2(ColRed, ColWhite)}, {3, 1, blend2(ColBlue, ColBlack)},
+		{0, 1, blend4(ColBlue, ColRed, ColBlack, ColWhite)},
+		{1, 2, ColWhite}, {3, 3, ColBlack}, // the last line is not blended
+	} {
+		if got := c.DrawGetPoint(tc.x, tc.y); got != tc.want {
+			t.Errorf("pixel %d,%d: %#04x, want %#04x", tc.x, tc.y, got, tc.want)
+		}
+	}
+}
+
 func TestDrawImg4Pal(t *testing.T) {
 	c, d, _, _ := newTest(t, Width, Height)
 	pal := palette(ColBlack, ColRed, ColGreen, ColBlue)
@@ -516,6 +561,9 @@ func TestRand(t *testing.T) {
 		}
 		if r := c.RandS8MinMax(-10, 10); r < -10 || r > 10 {
 			t.Fatalf("RandS8MinMax(-10, 10) = %d", r)
+		}
+		if r := c.RandS16MinMax(-10, -2); r < -10 || r > -2 {
+			t.Fatalf("RandS16MinMax(-10, -2) = %d", r)
 		}
 		if r := c.RandU16MinMax(100, 200); r < 100 || r > 200 {
 			t.Fatalf("RandU16MinMax(100, 200) = %d", r)

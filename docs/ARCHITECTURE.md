@@ -835,8 +835,9 @@ PicoPad は 320×240×16bit（150KB）のフレームバッファに描き、`Di
 
 8bit にした。
 
-- **色の番号**：色は描かれたときに `index` で番号を探し、なければ空いている番号を付ける（`pal [256]uint16`）。256 色を超えたら一番近い色（赤・青の 5bit を緑の 6bit に合わせた距離）。画面全体を1色で塗ると（`DrawClear` や全画面の `DrawRect`）古い色はもう残っていないので、番号を全部空ける（`freePalette`）。テトリスは 80 色。PicoLibSDK のゲームの画像の色を数えると、ATOMS・CHESS・EGGS・FIFTEEN・INVADERS・LIFE・MAZE・PACMAN・RAPTOR・SOKOBAN・TETRIS・TRAIN は 256 色以内、ANTS・FLAPPY・GHOSTRAC・VEGASLOT・ZOOM・PICTOR は超える（近い色になる）。
+- **色の番号**：色は描かれたときに `index` で番号を探し、なければ空いている番号を付ける（`pal [256]uint16`）。256 色を超えたら一番近い色（赤・青の 5bit を緑の 6bit に合わせた距離）。画面全体を1色で塗ると（`DrawClear` や全画面の `DrawRect`）古い色はもう残っていないので、番号を全部空ける（`freePalette`）。テトリスは 80 色。PicoLibSDK のゲームの画像の色を数えると、ATOMS・CHESS・EGGS・FIFTEEN・INVADERS・LIFE・MAZE・PACMAN・RAPTOR・SOKOBAN・TETRIS・TRAIN は 256 色以内、ANTS・FLAPPY・GHOSTRAC・VEGASLOT・ZOOM・PICTOR は超える（近い色になる。PICTOR は場面ごとにパレットを決める）。
 - **画像のパレット**：画像はそれぞれ自分のパレット（`TilesImg_Pal` など）を持つ。パレットの各色の番号の表（`palTable`、256 バイト）を最初に使ったときに作って覚える。パレットは文字列の定数なので、`unsafe.StringData` のポインタと長さで同じものと分かる。番号を全部空けたら（`gen` が変わる）表は作り直す。覚えるのは 32 個まで（ANTS が 18 個）。
+- **パレットを決める**：色が多すぎるゲーム（PICTOR）は、場面ごとに作っておいた 256 色のパレットを `SetPalette` で入れる（PicoPad にはない関数）。そのあと描く色は全部、パレットの一番近い色になる。描くときに作る色（2 倍の描画の間の色）は、色の上位 4bit ずつ（4,096 通り）で番号を覚える。`MapRect` は四角の中の画素の色を関数で変える（パレットの番号ごとに 1 回計算する）。
 - **送る**：`DispUpdate` は dirty rect を 8 行ずつ、パレットで RGB565（ビッグエンディアン）に直して `DrawRGBBitmap8Async`（ESP32 は DMA。kart と同じ2つのバッファ）で送る。ほかの液晶では `DrawRGBBitmap8`。
 - **置き場所**：320×240 の画面は液晶の中央（480×272 なら 80, 16 から）。`New` が液晶全体を黒にする。
 - ESP32-4827S043 では、RGB 液晶のフレームバッファに直接描けば 75KB 要らないが、今は同じ作りにしている（起動直後のヒープ約 130KB のうち約 87KB を使う）。
@@ -860,6 +861,7 @@ PicoPad は 320×240×16bit（150KB）のフレームバッファに描き、`Di
 
 - PicoLibSDK の画像は Windows のツール（PicoPadImg.exe）で BMP から C の配列（`img/*.cpp`）にしてある。RLE などの形式もそのツールで作るので、BMP からではなく **C の配列を読んで** Go の文字列定数にする（[tools/picoimg](../tools/picoimg/main.go)）。バイトは同じなので、描画の関数は PicoLibSDK と同じように読める。u16 の配列（パレット）はリトルエンディアンにする。配列の前の `// format: ...` のコメントも写す。
 - 文字列の中身は rodata（フラッシュ）に置かれる（romfont と同じ）。
+- 画像が大きいゲーム（PICTOR、約 1.6MB）は `-embed data` で、1KB 以上の配列をバイナリのファイル（`data/<名前>.bin`）にして `//go:embed` の文字列にする（Go のソースの `"\x.."` は 1 バイトが 4 文字になる）。`go:embed` の文字列もフラッシュに置かれる。
 - フォントは `_font/font_bold_8x8.c`（256 文字 × 8 行、1 バイト 1 行。文字 `ch` の行 `i` は `font[i*256+ch]`）。
 - `go generate` は環境変数 `PICOLIBSDK`（PicoLibSDK を取ってきた場所）を使う：`PICOLIBSDK=~/PicoLibSDK go generate ./picopad ./games/...`。
 
@@ -981,18 +983,27 @@ PicoPad は 320×240×16bit（150KB）のフレームバッファに描き、`Di
 
 ### 移植しなかったゲーム
 
-`PicoPad/GAME/` の 21 本のうち、次の 4 本は移植していない（ほかの 17 本は 15〜31）。作者の自作分は Unlicense だが、次のものは他社の作品の絵や面が入っていて、このリポジトリ（MIT）で配り直せるかがはっきりしない。
+`PicoPad/GAME/` の 21 本のうち、次の 3 本は移植していない（ほかの 18 本は 15〜32）。作者の自作分は Unlicense だが、次のものは他社の作品の絵や面が入っていて、このリポジトリ（MIT）で配り直せるかがはっきりしない。
 
 - ZOOM：Sega の「Buck Rogers: Planet of Zoom」（1984、DOS 版）をもとにしたもの。タイトルの画像が「BUCK ROGERS / PLANET OF ZOOM / SEGA」のロゴそのもので、自機や敵の絵も元のゲームのものと見られる。
 - FLAPPY：dB-SOFT の「Flappy」（1984、MZ-800 版など）。最初の画像が元のゲームのパッケージの絵で、面のデータ（200 面×4 組）も MZ-800・NES・X1 版のもの。タイルに「©dB-SOFT」の文字もある。
-- PICTOR：敵に R2-D2・デス・スター（スター・ウォーズ）、エンタープライズ号・クリンゴンの艦（スター・トレック）、ゼノモーフ（エイリアン）などの映画のキャラクターの絵がある。タイトルには販売店（Pájeníčko）のロゴ。点の記録は SD カードに保存する（約 4,800 行、画像 1.5MB）。
 - MULTISET：上のゲームをまとめて選べるようにしたもの（ゲームの中身は同じ）。
 
-ほかに `PicoPad/TINYGAME/` は GPLv3 なので入れていない。倉庫番（26）は、配布の条件がはっきりした作者の面だけを入れた。絵の 15 パズル（31）の絵とカードゲーム（29）の背景の写真は、出どころが書かれていない（他社のロゴやキャラクターではない）。
+PICTOR（32）は映画のキャラクターの絵 5 つとタイトルの販売店のロゴがあるので、その絵をこちらで描いたドット絵に替えて移植した。ほかに `PicoPad/TINYGAME/` は GPLv3 なので入れていない。倉庫番（26）は、配布の条件がはっきりした作者の面だけを入れた。絵の 15 パズル（31）の絵とカードゲーム（29）の背景の写真は、出どころが書かれていない（他社のロゴやキャラクターではない）。
+
+### Pictor の移植（32）
+
+- C の `src/*.cpp`（18 ファイル、約 2,900 行）を写した。描画以外の動き（敵・弾・ミサイル・ボーナス・点）は、C をホストでコンパイルしたものと 1 フレームずつ同じになる（下のテスト）。
+- **差し替えた絵**：C の絵には映画のキャラクターがある。宇宙船の場面の仲間の R2-D2（スター・ウォーズ）はロボット、銀河の敵のエンタープライズ号・クリンゴンの艦（スター・トレック）・デス・スター（スター・ウォーズ）は星の巡洋艦・戦艦・宇宙機雷、砂浜の 3 番目の敵のアントマン（マーベル）は火アリにした。どれも [artgen](../games/pictor/artgen/main.go) が `internal/pixelart`（線・楕円・球・多角形と輪郭）で描くドット絵で、大きさとアニメーションのコマ数は元の絵と同じ（当たり判定が変わらない）。名前も変えた（UFO の武器 Phaser は Plasma、Xenomorph は Alien 2。この絵は緑の人型の宇宙人で、映画のものではない）。タイトルの右上にある販売店（Pájeníčko）のロゴは黒で消した。
+- **パレット**：1 つの場面に 256 色の絵が 10 枚以上あり、背景は 2 倍に引き伸ばして間の色を混ぜる（`DrawImgPalDbl`）ので、色は数千になる。フレームバッファの 256 色に入れるため、場面ごとに使う絵の色をメディアンカット（[internal/palquant](../internal/palquant/palquant.go)、重みは背景・敵・新しい仲間を多め）で 256 色にまとめたパレットを作っておき（`palettes.go`、テストが `-update` で書く）、場面の始めに `SetPalette` で入れる。文字と枠の色、場面の始めの暗い画面の灰色 16 段は、パレットにそのまま入れる。混ぜた色は一番近い色にする（4,096 色のキャッシュ）。タイトルは自分のパレット、メニューと終わりの画面は `DrawClear` で空ける。
+- 場面の始めの暗い画面（C は 16bit の画素を全部灰色にする `DispShadow`）は `MapRect` で、パレットの番号ごとに 1 回だけ色を計算する。
+- 画像は約 1.6MB。Go の文字列にすると 4 倍以上になるので、1KB 以上の配列はバイナリのファイル（`data/*.bin`）にして `//go:embed` で読む（`picoimg -embed data`。中身はフラッシュに置かれる）。
+- C は PicoPad が描ける速さで回る（約 700 フレームで 1 分。VGA 版は 1 フレームに 45ms 待つ）。こちらは 1 フレームを最低 86ms にした。
+- 点の記録（上位 8 人）は C では SD カードの `PICTOR.TOP` に保存する。こちらは RAM だけで、電源を切ると消える。メニューのスクリーンショットは何もしない。
 
 ### テスト
 
-- [picopad_test.go](../picopad/picopad_test.go)：画像（8bit・4bit・透明色つき）と切り抜き、文字、256 色を超えたとき、`DrawClear` で番号が空くこと、dirty rect の送り方（帯ごと）、中央に置くこと、ボタン（繰り返し・離す・最初から押されている・タッチの 9 か所・眠らずに待つループ）、乱数。
+- [picopad_test.go](../picopad/picopad_test.go)：画像（8bit・4bit・透明色つき）と切り抜き、文字、256 色を超えたとき、`DrawClear` で番号が空くこと、`SetPalette` のあとは一番近い色になること、2 倍の描画（`DrawImgPalDbl`、間の色と行の折り返し）、dirty rect の送り方（帯ごと）、中央に置くこと、ボタン（繰り返し・離す・最初から押されている・タッチの 9 か所・眠らずに待つループ）、乱数。
 - [tetris_test.go](../games/tetris/tetris_test.go)：最初の画面のゴールデン画像（`tetris_start`。320×240 と、480×272 の中央の両方で同じ）、移動・回転・落下、デモ（ボタンを押さずに 120 秒：10 秒でデモになり、点と消した行が増える）、2 行消して次のレベル、ゲームオーバーで最高点が残ること、Y で `Run` から戻ること。画面の枠の中のブロックは、盤のタイルと 1 ピクセルずつ比べる（`checkField`）。
 - [maze_test.go](../games/maze/maze_test.go)：最初の画面（`maze_start`。顔とその周りだけ見える）、20 個の種で迷路の石が全部壁になり通路が全部つながること、最短の道をボタンで進んで出口に着き、迷路全体が見えて（`maze_solved`）ボタンで次の迷路になること、A で出口が見えて元に戻ること。
 - [fifteen_test.go](../games/fifteen/fifteen_test.go)：最初の画面（`fifteen_start`。混ぜた盤）、`shift` の差分の更新と `calcPos` が合うこと（20 通り × 200 手）、矢印でタイルが C のとおりに動くこと（端では動かない）、X で最後まで解けて（`fifteen_solved`。ゲームの時間で約 23 秒）ボタンで次のゲームになること。
@@ -1009,13 +1020,16 @@ PicoPad は 320×240×16bit（150KB）のフレームバッファに描き、`Di
 - [ants_test.go](../games/ants/ants_test.go)：C の `game.cpp` をホストで C としてコンパイルし（[testdata/csim](../games/ants/testdata/csim/run.sh)、描画・音・USB は空）、同じ乱数で CPU 同士を 2,000 手（21 回の勝ち負けを含む）動かして、毎手の両者の資源とカードのチェックサムが C と同じ。最初の画面（`ants_open`）とゲーム（`ants_game`、`ants_turn`）、X で選んだカードを A で使うと CPU が続けて打つ、2 つ以上のことをするカード（予備・荷車・破壊工作・泥棒・呪い）と、塀より強い攻撃が城に回ること。
 - [ghostrac_test.go](../games/ghostrac/ghostrac_test.go)：始め（`ghostrac_start`）、UP で北へ走ってスタートを越えるとレースが始まる（`ghostrac_drive`）、車をチェックポイント A・B・C とスタートに置いていくと 1 周になり、最速の周が記録される。その周をゴーストが走る（`ghostrac_ghost`、前にゴーストの車）。picopad の `Mat2D` は、等倍・2 倍・180 度回転（`sin(float32(π))` が 0 よりわずかに小さいための 1 ピクセルのずれも SDK と同じ）とタイルマップを確かめる。
 - [fifteen2_test.go](../games/fifteen2/fifteen2_test.go)：絵の選択（`fifteen2_select`）、子猫の絵で始めた画面（`fifteen2_game`）と番号（`fifteen2_numbers`）、RIGHT で最後の絵、ソルバーで完成すると絵が全部そろい（`fifteen2_solved`）、キーで選択へ戻る。
+- [pictor_test.go](../games/pictor/pictor_test.go)：C の `src/*.cpp` のうち描画・メニュー以外をホストでコンパイルし（[testdata/csim](../games/pictor/testdata/csim/run.sh)、画像と音のデータもそのまま。描画と音は空の関数）、同じ乱数とボタンの台本（左右上下、A、90 フレームごとに B、250 フレームごとに X で仲間を替える）で 9,000 フレーム（12 の場面と 2 周目の始め）動かして、毎フレームのバラ・敵・爆発・弾・ミサイル・点・ボーナスのチェックサムが C と同じ。スカラベの砂の玉は 1 回の呼び出しの引数で乱数を 2 つ取るので、ARM の GCC と同じく左から順に評価する clang でコンパイルする。タイトル（`pictor_title`）、場面の始め（`pictor_start`）、B・X で変身、撃っている画面（`pictor_game`、1 フレーム 86ms）、メニュー（`pictor_menu`）、続ける、終わり（`pictor_end`）で名前を入れると記録に載る。差し替えた絵は `pictor_beach`（火アリ）・`pictor_robot`（ロボット）・`pictor_galaxy`（巡洋艦・戦艦・機雷と UFO）。場面のパレットが `palettes.go` と同じこと（`TestPalettes`）。
 - [life_test.go](../games/life/life_test.go)：最初の画面（`life_start`。スロット 1 のペンタデカスロンとカーソル）、`generation` をテストの中に素直に書いた規則（端はつながる）とランダムな世界で 30 世代比べる、グライダーが世界の角を越えて 200 世代で元に戻る、X でスロットが順に出て A で変えたセルが保存されている、B で動いて止めると元に戻る、カーソルが端から反対の端へ回る。
-- 元のゲームの画面写真（PicoLibSDK の `PicoPad/GAME/TETRIS/TETRIS.PNG`）と `tetris_start` を RGB565 で比べ、動かない部分（壁・枠・題字・統計のブロック）は全ピクセル同じだった。迷路の `MAZE.PNG`（途中まで進んだ迷路）は、左上 4 ピクセルずらした 8×8 のマス 1,131 個がどれも、こちらで描いたタイル 17 種のどれかと全ピクセル同じだった（4bit の画像の読み方と描く位置が同じ）。15 パズルの `FIFTEEN.PNG` も、48×48 のマス 16 個がどれもタイル 18 種のどれかと全ピクセル同じで、盤の外は黒。TV テニスの `TVTENNIS.PNG`（プレイ中）と `tvtennis_game` は、点数の数字とネットが全ピクセル同じ（違うのはパドルとボールの位置）。ライフゲームの `LIFE.PNG` は、16×16 のマス 300 個がどれもタイル 4 種のどれかと全ピクセル同じで、`life_start` と違うのはカーソルの 2 マスだけ（写真はカーソルを 1 つ右に動かしたあと）。絵の 15 パズルの `FIFTEEN2.PNG`（少女と子猫の絵、番号付き）は、80×60 のタイル 16 枚のうち 12 枚の左上が絵のどこかのタイルと全ピクセル同じ（残りは空きのタイルと、パレットが 1 色足りず近い色になる画素のあるタイル）。カーレースの `GHOSTRAC.PNG`（始め）と `ghostrac_start` は、地面の透視図・車・時間の行が全ピクセル同じ（違うのはパレットが足りず近い色になる空の街並みだけ）。カードゲームの `ANTS.PNG` と `ants_game` は、背景の写真（城の外）と左右の題字が全ピクセル同じ（状態欄はパレットが足りず近い色）。シューティングの `RAPTOR.PNG` は、地形を同じスクロール位置（182）で描くと地形の 91% と左のシールド欄が全ピクセル同じ（残りは敵・影・弾）。スロットマシンの `VEGASLOT.PNG` と `vegaslot_start` は、リールと数字の外（背景）が全ピクセル同じ。倉庫番の `SOKOBAN.PNG`（24 ピクセルのタイル）は、24×24 のマス 117 個のうち 116 個がこちらのタイルのどれかと全ピクセル同じ（残り 1 個はプレイヤー）。パックマンの `PACMAN.PNG`（途中）と `pacman_ready` は、左右の外壁、残りの数、面のフルーツが全ピクセル同じ。スペースインベーダーの `INVADERS.PNG`（途中）と `picoinvaders_start` は、得点・HI-SCORE・LEVEL の文字、上下の線、残りの砲台、砲台、欠けていない家が全ピクセル同じ。列車のパズルの `TRAIN.PNG`（20 面の始め）は、20 面を開いた画面と全ピクセル同じ。リバーシ風のゲームの `EGGS.PNG`（途中）と `eggs_game` は、プレイヤー 1 の欄（枠と選択の印）・「WINS:」の行・空いているマスが全ピクセル同じ。チェスの `CHESS.PNG`（6 手目まで）と `chess_board` は、盤の枠（座標の文字を含む）と空いているマスが全ピクセル同じ。原子の陣取りの `ATOMS.PNG`（4 人で途中）と `atoms_game` は、空きのマス・情報欄の背景・「Player 1」の名前と枠が全ピクセル同じ。
+- 元のゲームの画面写真（PicoLibSDK の `PicoPad/GAME/TETRIS/TETRIS.PNG`）と `tetris_start` を RGB565 で比べ、動かない部分（壁・枠・題字・統計のブロック）は全ピクセル同じだった。迷路の `MAZE.PNG`（途中まで進んだ迷路）は、左上 4 ピクセルずらした 8×8 のマス 1,131 個がどれも、こちらで描いたタイル 17 種のどれかと全ピクセル同じだった（4bit の画像の読み方と描く位置が同じ）。15 パズルの `FIFTEEN.PNG` も、48×48 のマス 16 個がどれもタイル 18 種のどれかと全ピクセル同じで、盤の外は黒。TV テニスの `TVTENNIS.PNG`（プレイ中）と `tvtennis_game` は、点数の数字とネットが全ピクセル同じ（違うのはパドルとボールの位置）。ライフゲームの `LIFE.PNG` は、16×16 のマス 300 個がどれもタイル 4 種のどれかと全ピクセル同じで、`life_start` と違うのはカーソルの 2 マスだけ（写真はカーソルを 1 つ右に動かしたあと）。Pictor の `PICTOR.PNG`（草原の途中）は、背景のスクロールを 435 フレーム目に合わせると、敵やバラのない所の色の差（RGB の距離の二乗平均平方根）が 11.9。写真の色をそのまま場面のパレットの一番近い色にした場合が 10.4 なので、違いはほぼパレットが 256 色なことによる。絵の 15 パズルの `FIFTEEN2.PNG`（少女と子猫の絵、番号付き）は、80×60 のタイル 16 枚のうち 12 枚の左上が絵のどこかのタイルと全ピクセル同じ（残りは空きのタイルと、パレットが 1 色足りず近い色になる画素のあるタイル）。カーレースの `GHOSTRAC.PNG`（始め）と `ghostrac_start` は、地面の透視図・車・時間の行が全ピクセル同じ（違うのはパレットが足りず近い色になる空の街並みだけ）。カードゲームの `ANTS.PNG` と `ants_game` は、背景の写真（城の外）と左右の題字が全ピクセル同じ（状態欄はパレットが足りず近い色）。シューティングの `RAPTOR.PNG` は、地形を同じスクロール位置（182）で描くと地形の 91% と左のシールド欄が全ピクセル同じ（残りは敵・影・弾）。スロットマシンの `VEGASLOT.PNG` と `vegaslot_start` は、リールと数字の外（背景）が全ピクセル同じ。倉庫番の `SOKOBAN.PNG`（24 ピクセルのタイル）は、24×24 のマス 117 個のうち 116 個がこちらのタイルのどれかと全ピクセル同じ（残り 1 個はプレイヤー）。パックマンの `PACMAN.PNG`（途中）と `pacman_ready` は、左右の外壁、残りの数、面のフルーツが全ピクセル同じ。スペースインベーダーの `INVADERS.PNG`（途中）と `picoinvaders_start` は、得点・HI-SCORE・LEVEL の文字、上下の線、残りの砲台、砲台、欠けていない家が全ピクセル同じ。列車のパズルの `TRAIN.PNG`（20 面の始め）は、20 面を開いた画面と全ピクセル同じ。リバーシ風のゲームの `EGGS.PNG`（途中）と `eggs_game` は、プレイヤー 1 の欄（枠と選択の印）・「WINS:」の行・空いているマスが全ピクセル同じ。チェスの `CHESS.PNG`（6 手目まで）と `chess_board` は、盤の枠（座標の文字を含む）と空いているマスが全ピクセル同じ。原子の陣取りの `ATOMS.PNG`（4 人で途中）と `atoms_game` は、空きのマス・情報欄の背景・「Player 1」の名前と枠が全ピクセル同じ。
 - ブラウザ（`make wasm PKG=./examples/15_tetris`・`16_maze`・`17_fifteen`・`18_life`）は headless Chromium と Playwright で確かめた。テトリスは表示・A で開始・左右・回転・落下・B で一時停止、迷路は矢印で進む・壁で止まる・A で出口が見えて戻る、15 パズルは矢印でタイルが動く・X で最後まで解ける、ライフゲームはカーソル・反転・スロット・B で動いて止めると戻る。実機は未確認。
 
 ### ほかのゲームを移植するとき
 
 1. `PicoPad/GAME/<名前>/img/*.cpp` を tools/picoimg で `games/<名前>/` に変換する（音の `snd/*.cpp` は今は要らない）。
 2. `src/*.cpp` を関数ごとに Go のメソッドにする。グローバル変数は構造体のフィールド、表は `var` の配列か文字列。
-3. 足りない SDK の関数を picopad に足す。今あるのは `DrawPoint`・`DrawGetPoint`・`DrawRect`・`DrawRectShadow`・`DrawBlit1Shadow`・`SaveRect`・`RestoreRect`・`DrawImg4PalMat`・`DrawTile4PalMap`（`Mat2D`）・`PrepPalette`・`DrawFrame(W)`・`DrawClear(Col)`・`DrawChar(Bg)`・`DrawText(Bg)`・`DrawImgPal`・`DrawImg4Pal`・`DrawImgRle`・`DrawImg4Rle`・`DrawBlitPal`・`DrawBlit4Pal`・`DrawText(Bg)(H/W/2)`・`DrawChar(Bg)(H/W/2)`・`SelFont*`・`SetFont`・`DispUpdate(All)`・`DispDirty*`・`Key*`・`Time`・`WaitMs`・`Rand*`（`RandU8`・`RandU16`・`RandU8Max`・`RandU16Max`・`RandS8MinMax`・`RandU8MinMax`・`RandU16MinMax`・`RandS16Max`・`RandFloat`・`RandFloatMax`・`RandFloatMinMax`・`RandShift`）。まだないのは音（と USB）。
+3. 足りない SDK の関数を picopad に足す。今あるのは `DrawPoint`・`DrawGetPoint`・`DrawRect`・`DrawRectShadow`・`DrawBlit1Shadow`・`SaveRect`・`RestoreRect`・`DrawImg4PalMat`・`DrawTile4PalMap`（`Mat2D`）・`PrepPalette`・`SetPalette`・`MapRect`・`DrawImgPalDbl`（PICTOR の関数）・`DrawFrame(W)`・`DrawClear(Col)`・`DrawChar(Bg)`・`DrawText(Bg)`・`DrawImgPal`・`DrawImg4Pal`・`DrawImgRle`・`DrawImg4Rle`・`DrawBlitPal`・`DrawBlit4Pal`・`DrawText(Bg)(H/W/2)`・`DrawChar(Bg)(H/W/2)`・`SelFont*`・`SetFont`・`DispUpdate(All)`・`DispDirty*`・`Key*`・`Time`・`WaitMs`・`Rand*`（`RandU8`・`RandU16`・`RandU8Max`・`RandU16Max`・`RandS8MinMax`・`RandU8MinMax`・`RandU16MinMax`・`RandS16MinMax`・`RandS16Max`・`RandFloat`・`RandFloatMax`・`RandFloatMinMax`・`RandShift`）。まだないのは音（と USB）。
 4. テストは偽の時計とボタンの台本（internal/picotest）で `Run` を動かし、`At` で画面と状態を確かめる。ゲームが眠らずに描き続けるなら `Clock.Step` を大きくする。
+5. 乱数で動くゲームは、C のゲームの部分を描画の空の関数とともにホストでコンパイルし（`games/<名前>/testdata/csim`）、同じ乱数と同じボタンで毎フレームの状態のチェックサムを比べると、写し間違いが見つかる（PACMAN・VEGASLOT・RAPTOR・ANTS・PICTOR）。1 回の呼び出しの引数で乱数を 2 つ以上取る所は評価の順に気を付ける（ARM の GCC は左から、x86 の GCC は右から）。
+6. 他社の作品の絵は、[internal/pixelart](../internal/pixelart/pixelart.go) で同じ大きさのドット絵を描いて替える（PICTOR の `artgen`）。

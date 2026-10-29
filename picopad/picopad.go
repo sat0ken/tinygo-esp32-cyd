@@ -108,6 +108,7 @@ type Console struct {
 
 	font    Font
 	shadows [16]*shadowTab // the shadow levels used, made when needed
+	colors  *colorCache    // the colours made while drawing, made when needed
 
 	keys
 	rand uint64

@@ -17,6 +17,10 @@ import (
 
 var update = flag.Bool("update", false, "rewrite the golden images in testdata/golden")
 
+// Updating reports whether the test runs with -update: other generated
+// test data (palettes...) is rewritten then too.
+func Updating() bool { return *update }
+
 // Dir returns testdata/golden of the module, found by walking up from the
 // test's working directory to go.mod.
 func Dir(t *testing.T) string {

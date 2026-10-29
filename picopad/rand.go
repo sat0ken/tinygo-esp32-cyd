@@ -71,6 +71,11 @@ func (c *Console) RandFloatMinMax(min, max float32) float32 {
 	return c.RandFloatMax(max-min) + min
 }
 
+// RandS16MinMax returns a random number from min to max.
+func (c *Console) RandS16MinMax(min, max int16) int16 {
+	return int16(c.RandU16Max(uint16(max-min))) + min
+}
+
 // RandS16Max returns a random number from 0 to max (max can be negative).
 func (c *Console) RandS16Max(max int16) int16 {
 	if max >= 0 {
