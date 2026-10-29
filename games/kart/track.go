@@ -1,5 +1,7 @@
 package kart
 
+import "math"
+
 // The track is a map of mapSize x mapSize cells, cellSize world units
 // square. A world unit is one texel of the ground.
 const (
@@ -20,8 +22,12 @@ const (
 	road
 	curb
 	startLine
+	boost // a boost pad: driving over it speeds the kart up for a moment
 	numTiles
 )
+
+// boostAt are where the boost pads are, as fractions of the course.
+var boostAt = [...]float32{0.30, 0.62, 0.86}
 
 // coursePoints is the middle line of the course in cells, in driving
 // order; it closes back on the first point.
@@ -55,20 +61,11 @@ func newTrack() *track {
 	t.stamp(roadRadius+curbWidth, curb)
 	t.stamp(roadRadius, road)
 
-	// The start line: the road cells less than a cell from the first
-	// point along the driving direction.
-	p, q := t.path[0], t.path[1]
-	dx, dy := q[0]-p[0], q[1]-p[1]
-	l := sqrt(dx*dx + dy*dy)
-	dx, dy = dx/l, dy/l
-	for cy := 0; cy < mapSize; cy++ {
-		for cx := 0; cx < mapSize; cx++ {
-			ox, oy := float32(cx)+0.5-p[0], float32(cy)+0.5-p[1]
-			along, across := ox*dx+oy*dy, -ox*dy+oy*dx
-			if along > -1 && along < 1 && across > -roadRadius && across < roadRadius {
-				t.cells[cy*mapSize+cx] = uint8(startLine)
-			}
-		}
+	// The start line across the road at the first point, the boost pads
+	// in the middle of the road further on.
+	t.across(0, 1, roadRadius, startLine)
+	for _, f := range boostAt {
+		t.across(int(f*float32(len(t.path))), 1.5, roadRadius-1, boost)
 	}
 	for cy := 0; cy < mapSize; cy++ {
 		for cx := 0; cx < mapSize; cx++ {
@@ -82,7 +79,97 @@ func newTrack() *track {
 }
 
 // checkerBits: the checker squares of each tile are 1<<checkerBits cells.
-var checkerBits = [numTiles]uint8{grass: 1, road: 2, curb: 0, startLine: 0}
+var checkerBits = [numTiles]uint8{grass: 1, road: 2, curb: 0, startLine: 0, boost: 0}
+
+// across sets the cells less than along cells before or after path point
+// i (in the driving direction) and less than half cells to its side to k.
+func (t *track) across(i int, along, half float32, k tile) {
+	p := t.path[i]
+	dx, dy := t.dir(float32(i))
+	for cy := int(p[1] - 6); cy <= int(p[1]+6); cy++ {
+		for cx := int(p[0] - 6); cx <= int(p[0]+6); cx++ {
+			if cx < 0 || cy < 0 || cx >= mapSize || cy >= mapSize {
+				continue
+			}
+			ox, oy := float32(cx)+0.5-p[0], float32(cy)+0.5-p[1]
+			a, c := ox*dx+oy*dy, -ox*dy+oy*dx
+			if a > -along && a < along && c > -half && c < half {
+				t.cells[cy*mapSize+cx] = uint8(k)
+			}
+		}
+	}
+}
+
+// point returns where position s along the middle line is (s in path
+// points, any value: it wraps round the course) in world units, moved
+// lane cells to the right.
+func (t *track) point(s, lane float32) (x, y float32) {
+	n := len(t.path)
+	i := int(floor(s))
+	f := s - float32(i)
+	a, b := t.path[mod(i, n)], t.path[mod(i+1, n)]
+	dx, dy := t.dir(s)
+	x = (a[0] + (b[0]-a[0])*f - dy*lane) * cellSize
+	y = (a[1] + (b[1]-a[1])*f + dx*lane) * cellSize
+	return x, y
+}
+
+// dir returns the driving direction at position s, a unit vector.
+func (t *track) dir(s float32) (dx, dy float32) {
+	n := len(t.path)
+	i := int(floor(s))
+	a, b := t.path[mod(i-1, n)], t.path[mod(i+2, n)]
+	dx, dy = b[0]-a[0], b[1]-a[1]
+	l := sqrt(dx*dx + dy*dy)
+	return dx / l, dy / l
+}
+
+// nearest returns the path point nearest to world position (x, y),
+// looking within ahead points around point i (the last one found).
+func (t *track) nearest(x, y float32, i, ahead int) int {
+	n := len(t.path)
+	cx, cy := x/cellSize, y/cellSize
+	best, bestD := i, float32(-1)
+	for k := i - ahead; k <= i+ahead; k++ {
+		p := t.path[mod(k, n)]
+		dx, dy := p[0]-cx, p[1]-cy
+		if d := dx*dx + dy*dy; bestD < 0 || d < bestD {
+			best, bestD = mod(k, n), d
+		}
+	}
+	return best
+}
+
+// curve returns how much the course turns between s and s+ahead points,
+// in radians (0 straight, about 1.5 for a hairpin).
+func (t *track) curve(s, ahead float32) float32 {
+	ax, ay := t.dir(s)
+	bx, by := t.dir(s + ahead)
+	c := ax*bx + ay*by
+	if c > 1 {
+		c = 1
+	}
+	if c < -1 {
+		c = -1
+	}
+	return float32(math.Acos(float64(c)))
+}
+
+func mod(i, n int) int {
+	i %= n
+	if i < 0 {
+		i += n
+	}
+	return i
+}
+
+func floor(v float32) float32 {
+	f := float32(int(v))
+	if f > v {
+		f--
+	}
+	return f
+}
 
 // stamp sets every cell within r cells of the middle line to k.
 func (t *track) stamp(r float32, k tile) {

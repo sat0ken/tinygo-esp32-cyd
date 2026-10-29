@@ -1,10 +1,11 @@
-// 13_kart is the first prototype of a kart racing game (package
-// games/kart): drive round the course, see how fast the ground can be
-// drawn. Every second the log shows the frames per second, the time of a
-// frame and how much of it is spent sending to the panel.
+// 13_kart runs the kart racing game (package games/kart) alone: three
+// laps against three CPU karts. Every second the log shows the frames per
+// second, the time of a frame and how much of it is spent waiting for the
+// panel. cmd/games has it together with the other games.
 //
 // With the mini joystick module: the stick steers, A accelerates, B
-// brakes. Without it: touch to accelerate, the touch's side steers.
+// brakes, Y gives up. Without it: touch the ground to accelerate, the
+// touch's side steers; tap the minimap to give up.
 //
 //	make flash-s028 PKG=./examples/13_kart   # ESP32-2432S028R
 //	make wasm PKG=./examples/13_kart && make serve
@@ -26,7 +27,7 @@ func main() {
 	}
 	g := kart.NewGame(d, t)
 	g.Pad = platform.InitPad() // the mini joystick module, if it is connected
-	g.DrawAll()
+	g.DrawMenu()
 	println("13_kart: started")
 
 	last := time.Now()

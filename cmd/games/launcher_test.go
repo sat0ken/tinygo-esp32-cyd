@@ -60,6 +60,7 @@ func TestStartEachGameAndComeBack(t *testing.T) {
 		"OTHELLO":   {50, 22},
 		"SOLITAIRE": {37, 11},
 		"POKER":     {33, 253},
+		"KART":      {50, 22},
 	}
 	// Tap each tile, where possible where the game's first screen has a
 	// button or a card (invaders: anywhere starts the game; othello: WHITE;
@@ -71,6 +72,7 @@ func TestStartEachGameAndComeBack(t *testing.T) {
 		"OTHELLO":   {350, 120},
 		"SOLITAIRE": {60, 150},
 		"POKER":     {200, 238},
+		"KART":      {400, 190}, // HARD
 	}
 	testStartEachGameAndComeBack(t, board.Width, board.Height, backs, taps)
 }
@@ -82,6 +84,7 @@ func TestStartEachGameAndComeBackSmall(t *testing.T) {
 		"OTHELLO":   {50, 22},
 		"SOLITAIRE": {27, 11},
 		"POKER":     {27, 217},
+		"KART":      {50, 22},
 	}
 	taps := map[string][2]int16{
 		"INVADERS":  {60, 80},
@@ -89,6 +92,7 @@ func TestStartEachGameAndComeBackSmall(t *testing.T) {
 		"OTHELLO":   {250, 115},
 		"SOLITAIRE": {25, 150},
 		"POKER":     {138, 215},
+		"KART":      {260, 170}, // HARD
 	}
 	testStartEachGameAndComeBack(t, 320, 240, backs, taps)
 }
@@ -145,8 +149,7 @@ func TestTilesFit(t *testing.T) {
 				}
 			}
 		}
-		// Five tiles, but the grid has room for six.
-		if last := l.tileRect(5); last.x+last.w > s.w || last.y+last.h > l.footBase-8 {
+		if last := l.tileRect(len(entries) - 1); last.x+last.w > s.w || last.y+last.h > l.footBase-8 {
 			t.Errorf("%dx%d: tiles end at %d,%d", s.w, s.h, last.x+last.w, last.y+last.h)
 		}
 	}

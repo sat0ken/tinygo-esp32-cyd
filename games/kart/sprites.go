@@ -15,12 +15,19 @@ func (s *sprite) at(x, y int16) (uint16, bool) {
 	return s.pix[i], s.on[i]
 }
 
-// parseSprite turns rows of letters (see spriteColor) into a sprite.
-func parseSprite(rows []string) *sprite {
+// parseSprite turns rows of letters (see spriteColor) into a sprite; body
+// is the colour of 'b' and its shade the colour of 'd'.
+func parseSprite(rows []string, body [2]color.RGBA) *sprite {
 	s := &sprite{w: int16(len(rows[0])), h: int16(len(rows))}
 	for _, r := range rows {
 		for i := 0; i < len(r); i++ {
 			c, on := spriteColor(r[i])
+			switch r[i] {
+			case 'b':
+				c = body[0]
+			case 'd':
+				c = body[1]
+			}
 			s.pix = append(s.pix, bigEndian(rgb565(c)))
 			s.on = append(s.on, on)
 		}

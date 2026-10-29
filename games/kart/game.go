@@ -1,52 +1,29 @@
-// Package kart is a kart racing game (a first prototype): drive round a
-// course seen from behind the kart. The ground is drawn like the old
-// "mode 7" racers: every row of the screen below the horizon is a line
+// Package kart is a kart racing game: three laps of a course against
+// three CPU karts, seen from behind the kart. The ground is drawn like the
+// old "mode 7" racers: every row of the screen below the horizon is a line
 // across the flat map of the course, further away the higher it is.
 //
 // There is no frame buffer on the SPI panels, so the ground is drawn
 // again every frame, a band of rows at a time. A band is sent in the
 // background (DrawRGBBitmap8Async, with DMA on the ESP32) while the next
-// one is drawn into the other buffer. The sky is drawn once.
+// one is drawn into the other buffer. The sky is drawn once; the HUD in it
+// only where it changes.
 //
-// It depends only on hal: examples/13_kart runs it.
+// It depends only on hal: examples/13_kart runs it alone, cmd/games from
+// a launcher.
 package kart
 
 import (
 	"image/color"
 	"math"
-	"strconv"
 	"time"
 	"unsafe"
 
 	"github.com/sat0ken/tinygo-cyd/hal"
 	"github.com/sat0ken/tinygo-cyd/pad"
-	"github.com/sat0ken/tinygo-cyd/romfont/proggy"
-	"tinygo.org/x/tinyfont"
-)
-
-// The camera, in world units: how high it is and how far behind the kart.
-const (
-	camHeight = 32
-	camBack   = 28
-
-	bandRows = 8 // rows drawn and sent at a time
-)
-
-// Driving, in world units and seconds.
-const (
-	maxSpeed   = 140
-	grassSpeed = 45 // on the grass the kart slows down to this
-	accel      = 70
-	brake      = 140
-	drag       = 20
-	grassDrag  = 120
-	turnRate   = 1.9 // radians per second at full lock
 )
 
 var (
-	skyColors    = [...]color.RGBA{{90, 160, 230, 255}, {120, 185, 240, 255}, {160, 210, 245, 255}}
-	hillColor    = color.RGBA{60, 120, 90, 255}
-	hudColor     = color.RGBA{255, 255, 255, 255}
 	outsideColor = color.RGBA{40, 110, 40, 255}
 
 	// The two colours of each tile (see track.cells).
@@ -55,24 +32,69 @@ var (
 		road:      {{105, 105, 110, 255}, {95, 95, 100, 255}},
 		curb:      {{220, 40, 40, 255}, {245, 245, 245, 255}},
 		startLine: {{20, 20, 20, 255}, {245, 245, 245, 255}},
+		boost:     {{255, 140, 0, 255}, {255, 225, 60, 255}},
 	}
 )
 
-// layout is where the horizon is and how wide the view is.
+type rect struct{ x, y, w, h int16 }
+
+func (r rect) has(x, y int16) bool { return x >= r.x && x < r.x+r.w && y >= r.y && y < r.y+r.h }
+
+func (r rect) box() pad.Box { return pad.Box{X: r.x, Y: r.y, W: r.w, H: r.h} }
+
+// layout is where everything is on a screen size.
 type layout struct {
 	horizon int16   // the first row of the ground
 	focal   float32 // pixels; smaller is wider
-	scale   int16   // pixels per bit of the kart sprite
+	scale   int16   // pixels per pixel of the player's kart
+
+	hudX                       int16 // the left of the HUD texts
+	lapBase, posBase, timeBase int16 // their baselines
+	minimap                    rect
+	countBase                  int16 // the countdown
+
+	titleBase int16
+	panel     rect // behind the level buttons
+	level0    rect // the first level button
+	levelStep int16
+	box       rect // the results
+	again     rect // in the results: race again, or back to the menu
+	menu      rect
 }
 
-// layoutFor returns the layout for a w x h screen. The kart's wheels are
-// on the row horizon + camHeight*focal/camBack, about 90% down the ground.
+// layoutFor returns the layout for a w x h screen: 480x272 and larger, or
+// 320x240 (ESP32-2432S028R). The kart's wheels are on the row horizon +
+// camHeight*focal/camBack, about 90% down the ground.
 func layoutFor(w, h int16) layout {
 	if w >= 480 && h >= 272 {
-		return layout{horizon: 100, focal: 136, scale: 2}
+		return layout{
+			horizon: 100, focal: 136, scale: 2,
+			hudX: 10, lapBase: 24, posBase: 50, timeBase: 68,
+			minimap: rect{w - 70, 4, 64, 64}, countBase: 72,
+			titleBase: 66,
+			panel:     rect{40, 156, 400, 100}, level0: rect{52, 178, 120, 50}, levelStep: 128,
+			box:   rect{100, 108, 280, 140},
+			again: rect{112, 212, 124, 28}, menu: rect{244, 212, 124, 28},
+		}
 	}
-	return layout{horizon: 88, focal: 120, scale: 2}
+	return layout{
+		horizon: 88, focal: 120, scale: 2,
+		hudX: 8, lapBase: 22, posBase: 46, timeBase: 62,
+		minimap: rect{w - 66, 2, 64, 64}, countBase: 62,
+		titleBase: 62, // clears the "< GAMES" button
+		panel:     rect{6, 136, 308, 92}, level0: rect{14, 154, 92, 46}, levelStep: 100,
+		box:   rect{30, 96, 260, 130},
+		again: rect{40, 194, 116, 26}, menu: rect{164, 194, 116, 26},
+	}
 }
+
+func (l *layout) levelButton(k int) rect {
+	r := l.level0
+	r.x += int16(k) * l.levelStep
+	return r
+}
+
+func backButton() rect { return rect{8, 8, 84, 28} }
 
 type bitmapDrawer interface {
 	DrawRGBBitmap8(x, y int16, data []uint8, w, h int16) error
@@ -84,6 +106,17 @@ type asyncDrawer interface {
 	Wait()
 }
 
+type screen int
+
+const (
+	menuScreen screen = iota
+	countdown         // 3, 2, 1: nobody moves
+	racing
+	finished // the results over the last frame
+)
+
+const countFrom = 3 // seconds of countdown
+
 // Game is the kart game.
 type Game struct {
 	d    hal.Display
@@ -93,30 +126,47 @@ type Game struct {
 	w, h int16
 	l    layout
 
-	// Pad, if set, is the game controller: the stick steers, A
-	// accelerates, B brakes. Without it, touching accelerates and the
-	// touch steers towards its side of the screen.
-	Pad hal.Pad
-	in  pad.Input
+	// OnExit, if set, shows a "< GAMES" button on the menu; tapping it
+	// (or B) calls OnExit (used by the cmd/games launcher).
+	OnExit func()
 
-	track   *track
-	kart    *sprite
+	// Pad, if set, is the game controller: the stick steers, A
+	// accelerates, B brakes, Y gives up the race; on the menu and the
+	// results the stick moves the focus and A presses. Without it,
+	// touching the ground accelerates and the touch steers towards its
+	// side of the screen; tapping the minimap gives up.
+	Pad      hal.Pad
+	in       pad.Input
+	firstUse bool // the controller was used for the first time in this frame
+
+	screen   screen
+	level    int
+	focus    int // menu: a level or 3 for "< GAMES"; results: 0 again, 1 menu
+	wasTouch bool
+
+	track *track
+	karts [4]kart // the player's first
+
+	countT                               float32
+	goT                                  float32 // "GO!" stays a moment
+	raceTime, lapStart, lastLap, bestLap float32
+	place                                int // at the finish
+
 	bufs    [2][]uint16 // bandRows rows of RGB565, stored so that the bytes are big endian
 	bytes   [2][]byte   // bufs as bytes, for DrawRGBBitmap8
 	next    int         // the buffer to draw into: the other may be going out
-	pal     [numTiles * 2]uint16
+	pal     [16]uint16
 	outside uint16
+	mini    []uint16 // the minimap without the dots, stored like bufs
+	dot     [9]uint16
 
-	x, y, angle float32 // the kart, in world units; angle 0 is east (+x), y grows south
-	speed       float32
+	shown [4]string // HUD texts on the screen: lap, place, time, countdown
 
-	// Timing of the last second, for the log and the HUD.
+	// Timing of the last second, for the log.
 	frames              int
 	frameTime, sendTime time.Duration
 	secStart            time.Time
-	fps                 int
 	stats               Stats
-	hudShown            string
 }
 
 // Stats is the timing of the last second.
@@ -127,16 +177,18 @@ type Stats struct {
 	OnRoad      bool
 }
 
-// NewGame makes the course and puts the kart on the start line. (The
-// course, the sprite and the colours are made here, not by package
+// NewGame makes the course and the karts; call DrawMenu to start. (The
+// course, the sprites and the colours are made here, not by package
 // initializers: see games/invaders/sprites.go.)
 func NewGame(d hal.Display, t hal.Touch) *Game {
 	w, h := d.Size()
 	bd, _ := d.(bitmapDrawer)
 	ad, _ := d.(asyncDrawer)
-	g := &Game{d: d, bd: bd, ad: ad, t: t, w: w, h: h, l: layoutFor(w, h)}
+	g := &Game{d: d, bd: bd, ad: ad, t: t, w: w, h: h, l: layoutFor(w, h), level: 1, focus: 1}
 	g.track = newTrack()
-	g.kart = parseSprite(kartArt[:])
+	for i := range g.karts {
+		g.karts[i].sprite = parseSprite(kartArt[:], kartColors[i])
+	}
 	for k := range g.bufs {
 		g.bufs[k] = make([]uint16, int(w)*bandRows)
 		g.bytes[k] = unsafe.Slice((*byte)(unsafe.Pointer(&g.bufs[k][0])), len(g.bufs[k])*2)
@@ -145,67 +197,49 @@ func NewGame(d hal.Display, t hal.Touch) *Game {
 		g.pal[2*k], g.pal[2*k+1] = bigEndian(rgb565(c[0])), bigEndian(rgb565(c[1]))
 	}
 	g.outside = bigEndian(rgb565(outsideColor))
-	g.reset()
+	g.makeMinimap()
+	g.newRace()
 	return g
 }
 
-// reset puts the kart on the start line, facing along the course.
-func (g *Game) reset() {
-	p, q := g.track.path[0], g.track.path[2]
-	g.x, g.y = p[0]*cellSize, p[1]*cellSize
-	g.angle = float32(math.Atan2(float64(q[1]-p[1]), float64(q[0]-p[0])))
-	g.speed = 0
-}
-
-// DrawAll draws the sky and the ground.
-func (g *Game) DrawAll() {
-	hz := g.l.horizon
-	band := hz / int16(len(skyColors))
-	for i, c := range skyColors {
-		y := int16(i) * band
-		hh := band
-		if i == len(skyColors)-1 {
-			hh = hz - y
-		}
-		g.d.FillRectangle(0, y, g.w, hh, c)
-	}
-	// Far hills: a row of bumps along the horizon.
-	for x := int16(0); x < g.w; x += 4 {
-		k := (x / 4) % 24
-		if k > 12 {
-			k = 24 - k
-		}
-		hh := 4 + k + (x/4)%5
-		g.d.FillRectangle(x, hz-hh, 4, hh, hillColor)
-	}
-	g.hudShown = ""
-	g.render()
-	g.d.Display()
-}
-
-// Update reads the controls, moves the kart by dt seconds and draws the
-// ground.
+// Update reads the controls and runs one frame.
 func (g *Game) Update(dt float32) {
 	start := time.Now()
 	if g.secStart.IsZero() {
 		g.secStart = start
 	}
+	used := g.in.Used
 	g.in.Update(g.Pad, dt)
-	gas, brakes, steer := g.controls()
-	g.drive(dt, gas, brakes, steer)
-	g.render()
-	g.drawHUD()
+	g.firstUse = g.in.Used && !used
+	x, y, pressed := g.t.ReadTouch()
+	tap := pressed && !g.wasTouch
+	g.wasTouch = pressed
+
+	switch g.screen {
+	case menuScreen:
+		g.updateMenu(tap, x, y)
+	case countdown:
+		g.countT -= dt
+		if g.countT <= 0 {
+			g.screen, g.goT = racing, 0.8
+		}
+		g.drawCountdown()
+	case racing:
+		g.race(dt, x, y, pressed, tap)
+	case finished:
+		g.updateResults(tap, x, y)
+	}
 	g.d.Display()
 
 	g.frames++
 	g.frameTime += time.Since(start)
 	if s := time.Since(g.secStart); s >= time.Second {
 		n := time.Duration(g.frames)
+		p := g.player()
 		g.stats = Stats{
 			FPS: int(int64(g.frames) * int64(time.Second) / int64(s)), Frame: g.frameTime / n, Send: g.sendTime / n,
-			Speed: int(g.speed), X: int(g.x), Y: int(g.y), OnRoad: g.track.at(g.x, g.y) != grass,
+			Speed: int(p.speed), X: int(p.x), Y: int(p.y), OnRoad: g.track.at(p.x, p.y) != grass,
 		}
-		g.fps = g.stats.FPS
 		g.frames, g.frameTime, g.sendTime, g.secStart = 0, 0, 0, time.Now()
 	}
 }
@@ -213,9 +247,37 @@ func (g *Game) Update(dt float32) {
 // Stats returns the timing of the last full second.
 func (g *Game) Stats() Stats { return g.stats }
 
+// race runs a frame of the race.
+func (g *Game) race(dt float32, x, y int16, pressed, tap bool) {
+	if g.in.Pressed(hal.PadY) || (tap && g.l.minimap.has(x, y)) {
+		g.DrawMenu() // give up
+		return
+	}
+	g.raceTime += dt
+	if g.goT > 0 {
+		g.goT -= dt
+	}
+	gas, brakes, steer := g.controls(x, y, pressed)
+	p := g.player()
+	g.drive(p, dt, gas, brakes, steer)
+	for i := 1; i < len(g.karts); i++ {
+		g.driveCPU(&g.karts[i], dt)
+	}
+	g.bump()
+	done := g.follow(p)
+	g.render()
+	g.drawHUD()
+	if done {
+		g.screen = finished
+		g.place = g.placeNow()
+		g.focus = 0
+		g.drawResults()
+	}
+}
+
 // controls returns the gas and brake (on or off) and the steering (-1 is
 // full left, 1 full right).
-func (g *Game) controls() (gas, brakes bool, steer float32) {
+func (g *Game) controls(x, y int16, pressed bool) (gas, brakes bool, steer float32) {
 	if g.in.Used {
 		gas = g.in.Held(hal.PadA | hal.PadOK)
 		brakes = g.in.Held(hal.PadB)
@@ -227,8 +289,7 @@ func (g *Game) controls() (gas, brakes bool, steer float32) {
 		}
 		return
 	}
-	x, _, pressed := g.t.ReadTouch()
-	if !pressed {
+	if !pressed || y < g.l.horizon {
 		return
 	}
 	steer = float32(x-g.w/2) / float32(g.w/3)
@@ -243,156 +304,18 @@ func (g *Game) controls() (gas, brakes bool, steer float32) {
 	return true, false, steer
 }
 
-// drive moves the kart: speed, steering (more grip at speed), the grass.
-func (g *Game) drive(dt float32, gas, brakes bool, steer float32) {
-	onGrass := g.track.at(g.x, g.y) == grass
-	switch {
-	case brakes:
-		g.speed -= brake * dt
-	case gas:
-		g.speed += accel * dt
-	default:
-		g.speed -= drag * dt
-	}
-	top := float32(maxSpeed)
-	if onGrass {
-		top = grassSpeed
-	}
-	if g.speed > top {
-		g.speed -= grassDrag * dt
-		if g.speed < top {
-			g.speed = top
-		}
-	}
-	if g.speed < 0 {
-		g.speed = 0
-	}
-	grip := g.speed / 40
-	if grip > 1 {
-		grip = 1
-	}
-	g.angle += steer * turnRate * grip * dt
-	sin, cos := sincos(g.angle)
-	g.x += cos * g.speed * dt
-	g.y += sin * g.speed * dt
-	const margin = 2 * cellSize
-	g.x = clamp(g.x, margin, worldSize-margin)
-	g.y = clamp(g.y, margin, worldSize-margin)
-}
-
-// render draws the ground below the horizon, bandRows rows at a time,
-// with the kart on it.
-func (g *Game) render() {
-	l := &g.l
-	sin, cos := sincos(g.angle)
-	fx, fy := cos, sin  // forward
-	rx, ry := -sin, cos // right
-	camX, camY := g.x-fx*camBack, g.y-fy*camBack
-
-	// The kart sprite: its wheels touch the ground on the kart's row.
-	kartRow := l.horizon + int16(camHeight*l.focal/camBack)
-	sw, sh := g.kart.w*l.scale, g.kart.h*l.scale
-	sx, sy := (g.w-sw)/2, kartRow+4-sh
-
-	half := float32(g.w) / 2
-	for y0 := l.horizon; y0 < g.h; y0 += bandRows {
-		n := g.h - y0
-		if n > bandRows {
-			n = bandRows
-		}
-		buf, bytes := g.bufs[g.next], g.bytes[g.next]
-		i := 0
-		for y := y0; y < y0+n; y++ {
-			// The row is a line across the map dist units ahead.
-			dist := camHeight * l.focal / float32(y-l.horizon+1)
-			step := dist / l.focal
-			wx := camX + fx*dist - rx*step*half
-			wy := camY + fy*dist - ry*step*half
-			mask := uint8(0xFF)
-			if dist > 300 {
-				mask = 0xFE // plain colours: the pattern would only flicker
-			}
-			row := buf[i : i+int(g.w)]
-			g.groundRow(row, fixed(wx), fixed(wy), fixed(rx*step), fixed(ry*step), mask, dist > halfDist)
-			if y >= sy && y < sy+sh {
-				g.kartRow(row, (y-sy)/l.scale, sx)
-			}
-			i += int(g.w)
-		}
-		t := time.Now()
-		switch {
-		case g.ad != nil:
-			g.ad.DrawRGBBitmap8Async(0, y0, bytes[:i*2], g.w, n) // waits for the other buffer
-		case g.bd != nil:
-			g.bd.DrawRGBBitmap8(0, y0, bytes[:i*2], g.w, n)
-		}
-		g.sendTime += time.Since(t)
-		g.next ^= 1
-	}
-}
-
-// Rows further than halfDist are drawn at half the width (every pixel
-// twice): there is no detail to lose up there.
-const halfDist = 120
-
-// groundRow fills row with the ground: u, v is the map position of the
-// first pixel (16.16 fixed point world units), du, dv the step to the
-// next; mask clears the shade bit of the cells far away. With half, each
-// computed pixel is written twice.
-func (g *Game) groundRow(row []uint16, u, v, du, dv int32, mask uint8, half bool) {
-	cells := &g.track.cells
-	pal := &g.pal
-	step := 1
-	if half {
-		step = 2
-		du, dv = du*2, dv*2
-	}
-	for k := 0; k+step <= len(row); k += step {
-		c := g.outside
-		cu, cv := uint32(u)>>(16+cellBits), uint32(v)>>(16+cellBits)
-		if cu|cv < mapSize {
-			c = pal[cells[cv*mapSize+cu]&mask&uint8(numTiles*2-1)]
-		}
-		row[k] = c
-		if half {
-			row[k+1] = c
-		}
-		u += du
-		v += dv
-	}
-}
-
-// kartRow draws row r of the kart sprite over row, starting at pixel x.
-func (g *Game) kartRow(row []uint16, r int16, x int16) {
-	s := g.kart
-	for b := int16(0); b < s.w; b++ {
-		c, on := s.at(b, r)
-		if !on {
-			continue
-		}
-		for k := int16(0); k < g.l.scale; k++ {
-			row[x+b*g.l.scale+k] = c
-		}
-	}
-}
-
-// drawHUD writes the speed and the frames per second in the sky.
-func (g *Game) drawHUD() {
-	text := "SPEED " + strconv.Itoa(int(g.speed)) + "   " + strconv.Itoa(g.fps) + " FPS"
-	if text == g.hudShown {
-		return
-	}
-	g.d.FillRectangle(4, 4, 150, 12, skyColors[0])
-	tinyfont.WriteLine(g.d, &proggy.TinySZ8pt7b, 6, 13, text, hudColor)
-	g.hudShown = text
+// start begins a race at the current level: the karts on the grid, the
+// countdown.
+func (g *Game) start() {
+	g.newRace()
+	g.screen, g.countT = countdown, countFrom
+	g.drawRaceScreen()
 }
 
 func sincos(a float32) (sin, cos float32) {
 	s, c := math.Sincos(float64(a))
 	return float32(s), float32(c)
 }
-
-func fixed(v float32) int32 { return int32(v * 65536) }
 
 func clamp(v, lo, hi float32) float32 {
 	if v < lo {

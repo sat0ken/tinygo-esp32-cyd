@@ -1,10 +1,10 @@
 // Command games is a launcher for the games: choose INVADERS, SUDOKU,
-// OTHELLO, SOLITAIRE or POKER on the first screen; the "< GAMES" button of
-// a game comes back here.
+// OTHELLO, SOLITAIRE, POKER or KART on the first screen; the "< GAMES"
+// button of a game comes back here.
 //
 // The games are the packages games/invaders, games/sudoku, games/othello,
-// games/solitaire and games/poker; examples/08 to 12 run each of them
-// alone.
+// games/solitaire, games/poker and games/kart; examples/08 to 13 run each
+// of them alone.
 //
 // With the mini joystick module connected (see platform.InitPad), the
 // stick moves a frame between the tiles and the buttons of the games, A

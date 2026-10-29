@@ -6,6 +6,7 @@ import (
 
 	"github.com/sat0ken/tinygo-cyd/games/cards"
 	"github.com/sat0ken/tinygo-cyd/games/invaders"
+	"github.com/sat0ken/tinygo-cyd/games/kart"
 	"github.com/sat0ken/tinygo-cyd/games/othello"
 	"github.com/sat0ken/tinygo-cyd/games/poker"
 	"github.com/sat0ken/tinygo-cyd/games/solitaire"
@@ -76,6 +77,12 @@ var entries = []entry{
 		g.Start()
 		return g
 	}},
+	{"KART", "race the CPU", drawKartIcon, func(l *Launcher) game {
+		g := kart.NewGame(l.d, l.t)
+		g.OnExit, g.Pad = l.exit, l.Pad
+		g.DrawMenu()
+		return g
+	}},
 }
 
 // Fonts of the tiles (TestTilesFit checks that the texts fit).
@@ -84,7 +91,7 @@ var (
 	aboutFont = &proggy.TinySZ8pt7b
 )
 
-// layout is where the tiles are: a 3x2 grid (one place is still free).
+// layout is where the tiles are: a 3x2 grid.
 type layout struct {
 	titleBase           int16
 	tile0               rect // the first tile
@@ -164,6 +171,8 @@ func (l *Launcher) Playing() string {
 		return "SOLITAIRE"
 	case *poker.Game:
 		return "POKER"
+	case *kart.Game:
+		return "KART"
 	}
 	return "?"
 }
@@ -356,6 +365,26 @@ func drawPokerIcon(l *Launcher, r rect) {
 	for k, rank := range []int{10, 11, 12, 13, 1} {
 		cards.DrawFaceSmall(l.d, cards.New(cards.Diamonds, rank), x0+int16(k)*step, y0, w, h)
 	}
+}
+
+func drawKartIcon(l *Launcher, r rect) {
+	// A road into the distance and a kart from behind.
+	u := r.h / 14 // 4 on 56 pixels
+	grass := color.RGBA{60, 150, 60, 255}
+	l.d.FillRectangle(r.x+(r.w-12*u)/2, r.y, 12*u, r.h, grass)
+	for y := int16(0); y < r.h; y++ {
+		half := 2*u + y*4*u/r.h
+		l.d.FillRectangle(r.x+r.w/2-half, r.y+y, 2*half, 1, color.RGBA{105, 105, 110, 255})
+		if (y/(2*u))%2 == 0 {
+			l.d.FillRectangle(r.x+r.w/2-u/4, r.y+y, u/2+1, 1, color.RGBA{240, 240, 240, 255})
+		}
+	}
+	cx, by := r.x+r.w/2, r.y+r.h-u
+	blue, black := color.RGBA{40, 90, 220, 255}, color.RGBA{20, 20, 24, 255}
+	l.d.FillRectangle(cx-4*u, by-3*u, 2*u, 3*u, black) // tyres
+	l.d.FillRectangle(cx+2*u, by-3*u, 2*u, 3*u, black)
+	l.d.FillRectangle(cx-3*u, by-4*u, 6*u, 3*u, blue) // body
+	l.d.FillRectangle(cx-u, by-6*u, 2*u, 2*u, color.RGBA{250, 200, 40, 255})
 }
 
 // vsyncWaiter is implemented by rgblcd.Device.
