@@ -49,6 +49,12 @@ func (c *Console) RandU16Max(max uint16) uint16 {
 	}
 }
 
+// RandU8MinMax returns a random number from min to max.
+func (c *Console) RandU8MinMax(min, max uint8) uint8 { return c.RandU8Max(max-min) + min }
+
+// RandU16MinMax returns a random number from min to max.
+func (c *Console) RandU16MinMax(min, max uint16) uint16 { return c.RandU16Max(max-min) + min }
+
 // RandFloat returns a random number from 0 up to 1 (not included).
 func (c *Console) RandFloat() float32 {
 	return float32(c.RandShift()>>(32-24)) * (1.0 / 0x1000000)

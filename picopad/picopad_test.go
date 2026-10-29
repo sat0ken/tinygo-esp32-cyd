@@ -387,6 +387,12 @@ func TestRand(t *testing.T) {
 		if r := c.RandU16Max(1000); r > 1000 {
 			t.Fatalf("RandU16Max(1000) = %d", r)
 		}
+		if r := c.RandU8MinMax(1, 50); r < 1 || r > 50 {
+			t.Fatalf("RandU8MinMax(1, 50) = %d", r)
+		}
+		if r := c.RandU16MinMax(100, 200); r < 100 || r > 200 {
+			t.Fatalf("RandU16MinMax(100, 200) = %d", r)
+		}
 		if r := c.RandS16Max(-300); r < -300 || r > 0 {
 			t.Fatalf("RandS16Max(-300) = %d", r)
 		}

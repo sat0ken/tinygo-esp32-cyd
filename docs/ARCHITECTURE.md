@@ -918,6 +918,13 @@ PicoPad は 320×240×16bit（150KB）のフレームバッファに描き、`Di
 - C の `main.cpp`（約 780 行）を関数ごとに写した。勝った人の点滅（C は勝ち・負け・引き分けで同じループが 3 つ）は `blinkPlayers`、勝ったコマを順に変える所は `showWinner` にまとめた。
 - 最初の画面は 4bit の RLE 画像（`DrawImg4Rle`、picopad に追加）。RLE は 8bit（`DrawImgRle`）もあり、どちらも C と同じく行をまたいで続く。画面の上の行は読み飛ばし、下は切る。C は画面の左右にはみ出すとバッファの外に書くが、Go では書かない。
 
+### 列車のパズルの移植（23）
+
+- C の `game.cpp`（約 740 行）と `main.cpp` を関数ごとに写した。C は `Board` のアドレスを先に計算して盤の外を読むことがある（すぐ後の判定で盤の外はぶつかる扱いになるので値は使わない）が、Go では盤の中のときだけ読む。
+- 面のデータ（`levels.cpp`、`EMP`・`WAL` などの記号 12,240 個）は、1 マス 1 文字・盤の 1 行を 1 行にした文字列 `levels` に変えた（`.` 空き、`#` 壁、`>` 機関車、`+` 門、`a`〜`s` が 19 種の物）。面ごとのパスワードと解答（方向の文字列）はそのまま。
+- パスワードの入力中は、C と同じくループでキーを待ちながら毎回描く。`string(buf)` はループの中で割り当てになるので、1 文字ずつ `DrawCharBg` で描く。
+- 乱数に `RandU8MinMax`・`RandU16MinMax` を足した（デモで見せる面を選ぶ）。
+
 ### テスト
 
 - [picopad_test.go](../picopad/picopad_test.go)：画像（8bit・4bit・透明色つき）と切り抜き、文字、256 色を超えたとき、`DrawClear` で番号が空くこと、dirty rect の送り方（帯ごと）、中央に置くこと、ボタン（繰り返し・離す・最初から押されている・タッチの 9 か所・眠らずに待つループ）、乱数。
@@ -928,13 +935,14 @@ PicoPad は 320×240×16bit（150KB）のフレームバッファに描き、`Di
 - [atoms_test.go](../games/atoms/atoms_test.go)：最初の画面（`atoms_open`）と始めた画面（`atoms_game`）、人が置くと CPU が続けて打つ、カーソルが端から反対へ回る、隅の爆発で隣を取る、全員 CPU のデモが勝者まで進み（テストの種で約 2 分 47 秒）、その間ずっと盤の原子の数と点が合う。
 - [chess_test.go](../games/chess/chess_test.go)：perft（1〜4 手）と CPU の手順が C と同じ、最初の画面（`chess_open`）と白で始めた盤（`chess_board`）、人が e2-e4 を指して棋譜の欄に `  1:e2-e4` が出て CPU が答える、持ち上げた駒を B で戻す。
 - [eggs_test.go](../games/eggs/eggs_test.go)：最初の画面（`eggs_open`、RLE）と 2 人で始めた画面（`eggs_game`）、プレイヤー 1・2 が置いたときの返り方と点、CPU 同士のデモが終わるまで（テストの種で約 57 秒）盤のコマの数と点が合う。
+- [train_test.go](../games/train/train_test.go)：C の `AUTOMODE` と同じく全 50 面の解答を動かし、どの面も全部集めて門に着く（解答の最後の 1 歩を削ると失敗する）。デモ（`train_demo`、列車が題字を書く）、1 面（`train_level`）、パスワード HOMER で 41 面に飛んだ画面（`train_open`）。列車の位置を見て向きが変わる所でボタンを押すパッドで 1 面を解くと 240 点で 2 面へ、右に進み続けると水晶 8 個（80 点）で壁にぶつかる、X で解答を見せたあとは 0 点のまま 1 面に戻る。
 - [life_test.go](../games/life/life_test.go)：最初の画面（`life_start`。スロット 1 のペンタデカスロンとカーソル）、`generation` をテストの中に素直に書いた規則（端はつながる）とランダムな世界で 30 世代比べる、グライダーが世界の角を越えて 200 世代で元に戻る、X でスロットが順に出て A で変えたセルが保存されている、B で動いて止めると元に戻る、カーソルが端から反対の端へ回る。
-- 元のゲームの画面写真（PicoLibSDK の `PicoPad/GAME/TETRIS/TETRIS.PNG`）と `tetris_start` を RGB565 で比べ、動かない部分（壁・枠・題字・統計のブロック）は全ピクセル同じだった。迷路の `MAZE.PNG`（途中まで進んだ迷路）は、左上 4 ピクセルずらした 8×8 のマス 1,131 個がどれも、こちらで描いたタイル 17 種のどれかと全ピクセル同じだった（4bit の画像の読み方と描く位置が同じ）。15 パズルの `FIFTEEN.PNG` も、48×48 のマス 16 個がどれもタイル 18 種のどれかと全ピクセル同じで、盤の外は黒。TV テニスの `TVTENNIS.PNG`（プレイ中）と `tvtennis_game` は、点数の数字とネットが全ピクセル同じ（違うのはパドルとボールの位置）。ライフゲームの `LIFE.PNG` は、16×16 のマス 300 個がどれもタイル 4 種のどれかと全ピクセル同じで、`life_start` と違うのはカーソルの 2 マスだけ（写真はカーソルを 1 つ右に動かしたあと）。リバーシ風のゲームの `EGGS.PNG`（途中）と `eggs_game` は、プレイヤー 1 の欄（枠と選択の印）・「WINS:」の行・空いているマスが全ピクセル同じ。チェスの `CHESS.PNG`（6 手目まで）と `chess_board` は、盤の枠（座標の文字を含む）と空いているマスが全ピクセル同じ。原子の陣取りの `ATOMS.PNG`（4 人で途中）と `atoms_game` は、空きのマス・情報欄の背景・「Player 1」の名前と枠が全ピクセル同じ。
+- 元のゲームの画面写真（PicoLibSDK の `PicoPad/GAME/TETRIS/TETRIS.PNG`）と `tetris_start` を RGB565 で比べ、動かない部分（壁・枠・題字・統計のブロック）は全ピクセル同じだった。迷路の `MAZE.PNG`（途中まで進んだ迷路）は、左上 4 ピクセルずらした 8×8 のマス 1,131 個がどれも、こちらで描いたタイル 17 種のどれかと全ピクセル同じだった（4bit の画像の読み方と描く位置が同じ）。15 パズルの `FIFTEEN.PNG` も、48×48 のマス 16 個がどれもタイル 18 種のどれかと全ピクセル同じで、盤の外は黒。TV テニスの `TVTENNIS.PNG`（プレイ中）と `tvtennis_game` は、点数の数字とネットが全ピクセル同じ（違うのはパドルとボールの位置）。ライフゲームの `LIFE.PNG` は、16×16 のマス 300 個がどれもタイル 4 種のどれかと全ピクセル同じで、`life_start` と違うのはカーソルの 2 マスだけ（写真はカーソルを 1 つ右に動かしたあと）。列車のパズルの `TRAIN.PNG`（20 面の始め）は、20 面を開いた画面と全ピクセル同じ。リバーシ風のゲームの `EGGS.PNG`（途中）と `eggs_game` は、プレイヤー 1 の欄（枠と選択の印）・「WINS:」の行・空いているマスが全ピクセル同じ。チェスの `CHESS.PNG`（6 手目まで）と `chess_board` は、盤の枠（座標の文字を含む）と空いているマスが全ピクセル同じ。原子の陣取りの `ATOMS.PNG`（4 人で途中）と `atoms_game` は、空きのマス・情報欄の背景・「Player 1」の名前と枠が全ピクセル同じ。
 - ブラウザ（`make wasm PKG=./examples/15_tetris`・`16_maze`・`17_fifteen`・`18_life`）は headless Chromium と Playwright で確かめた。テトリスは表示・A で開始・左右・回転・落下・B で一時停止、迷路は矢印で進む・壁で止まる・A で出口が見えて戻る、15 パズルは矢印でタイルが動く・X で最後まで解ける、ライフゲームはカーソル・反転・スロット・B で動いて止めると戻る。実機は未確認。
 
 ### ほかのゲームを移植するとき
 
 1. `PicoPad/GAME/<名前>/img/*.cpp` を tools/picoimg で `games/<名前>/` に変換する（音の `snd/*.cpp` は今は要らない）。
 2. `src/*.cpp` を関数ごとに Go のメソッドにする。グローバル変数は構造体のフィールド、表は `var` の配列か文字列。
-3. 足りない SDK の関数を picopad に足す。今あるのは `DrawPoint`・`DrawRect`・`DrawFrame(W)`・`DrawClear(Col)`・`DrawChar(Bg)`・`DrawText(Bg)`・`DrawImgPal`・`DrawImg4Pal`・`DrawImgRle`・`DrawImg4Rle`・`DrawBlitPal`・`DrawBlit4Pal`・`DrawText(Bg)(H/W/2)`・`DrawChar(Bg)(H/W/2)`・`SelFont*`・`SetFont`・`DispUpdate(All)`・`DispDirty*`・`Key*`・`Time`・`WaitMs`・`Rand*`（`RandU8`・`RandU16`・`RandU8Max`・`RandU16Max`・`RandS16Max`・`RandFloat`・`RandFloatMax`・`RandFloatMinMax`・`RandShift`）。よく使われていてまだないのは `DrawBlit1Shadow`・`DrawRectShadow`（影：色を暗くするので、暗くした色にも番号を付ける）、`FrameBuf` を読む関数（パレット番号で返せば、ゲームの比較はそのまま動く）、`Mat2D` の回転描画（GHOSTRAC）、音。
+3. 足りない SDK の関数を picopad に足す。今あるのは `DrawPoint`・`DrawRect`・`DrawFrame(W)`・`DrawClear(Col)`・`DrawChar(Bg)`・`DrawText(Bg)`・`DrawImgPal`・`DrawImg4Pal`・`DrawImgRle`・`DrawImg4Rle`・`DrawBlitPal`・`DrawBlit4Pal`・`DrawText(Bg)(H/W/2)`・`DrawChar(Bg)(H/W/2)`・`SelFont*`・`SetFont`・`DispUpdate(All)`・`DispDirty*`・`Key*`・`Time`・`WaitMs`・`Rand*`（`RandU8`・`RandU16`・`RandU8Max`・`RandU16Max`・`RandU8MinMax`・`RandU16MinMax`・`RandS16Max`・`RandFloat`・`RandFloatMax`・`RandFloatMinMax`・`RandShift`）。よく使われていてまだないのは `DrawBlit1Shadow`・`DrawRectShadow`（影：色を暗くするので、暗くした色にも番号を付ける）、`FrameBuf` を読む関数（パレット番号で返せば、ゲームの比較はそのまま動く）、`Mat2D` の回転描画（GHOSTRAC）、音。
 4. テストは偽の時計とボタンの台本（internal/picotest）で `Run` を動かし、`At` で画面と状態を確かめる。ゲームが眠らずに描き続けるなら `Clock.Step` を大きくする。
