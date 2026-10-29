@@ -49,6 +49,12 @@ func spriteColor(c byte) (color.RGBA, bool) {
 		return color.RGBA{255, 140, 30, 255}, true
 	case 'W':
 		return color.RGBA{255, 255, 240, 255}, true
+	case 'g':
+		return color.RGBA{20, 140, 90, 255}, true // capsule
+	case 'G':
+		return color.RGBA{70, 235, 165, 255}, true
+	case 'B':
+		return color.RGBA{60, 140, 240, 255}, true // glass
 	}
 	return color.RGBA{}, false
 }
@@ -145,4 +151,52 @@ var boomArt = [3][16]string{
 		"................",
 		"...o.........r..",
 	},
+}
+
+// droneArt is a small robot launched by the mothership.
+var droneArt = [...]string{
+	"....kkkk....",
+	"...kwwwwk...",
+	"..kwrwwrwk..",
+	".kwwwwwwwwk.",
+	"kyykyykyykyk",
+	".kwwwwwwwwk.",
+	"..kk....kk..",
+	"............",
+}
+
+// capsuleArt is a shield capsule.
+var capsuleArt = [...]string{
+	"....gggg....",
+	"...gGGGGg...",
+	"..gGGWWGGg..",
+	".gGGGWWGGGg.",
+	"gGGWWWWWWGGg",
+	"gGGWWWWWWGGg",
+	"gGGGGWWGGGGg",
+	".gGGGWWGGGg.",
+	"..gGGGGGGg..",
+	"...gGGGGg...",
+	"....gggg....",
+	"............",
+}
+
+// motherArt is the mothership.
+var motherArt = [...]string{
+	"............kkkkkkkk............",
+	"..........kkBBBBBBBBkk..........",
+	".........kBBBWWBBBBBBBk.........",
+	"........kBBBWWBBBBBBBBBk........",
+	"......kkkkkkkkkkkkkkkkkkkk......",
+	"....kkwwwwwwwwwwwwwwwwwwwwkk....",
+	"..kkwwwwwwwwwwwwwwwwwwwwwwwwkk..",
+	".kwwwwwwwwwwwwwwwwwwwwwwwwwwwwk.",
+	"kwwrrwwwyywwwrrwwwyywwwrrwwwyywk",
+	"kwwrrwwwyywwwrrwwwyywwwrrwwwyywk",
+	".kwwwwwwwwwwwwwwwwwwwwwwwwwwwwk.",
+	"..kkkkwwwwwwwwwwwwwwwwwwwwkkkk..",
+	"......kkkkwwwwwwwwwwwwkkkk......",
+	"..........kkkkkkkkkkkk..........",
+	".............k....k.............",
+	"............kk....kk............",
 }

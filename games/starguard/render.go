@@ -17,9 +17,10 @@ type dot struct {
 	c          uint16
 }
 
-// render draws the view (rows 0 to viewH): the stars, the enemies far to
-// near, the lasers, the crosshair, a red frame after a hit. A band of rows
-// is drawn into one buffer while the other one is sent.
+// render draws the view (rows 0 to viewH): the stars, the enemies and the
+// mothership far to near, the lasers, the crosshair, the mothership's
+// gauge, a red frame after a hit. A band of rows is drawn into one buffer
+// while the other one is sent.
 func (g *Game) render() {
 	l := &g.l
 	// The stars: nearer is brighter and bigger.
@@ -43,39 +44,30 @@ func (g *Game) render() {
 		nd++
 	}
 
-	// The enemies and explosions in front of the ship, far to near.
-	n := 0
+	// The enemies, explosions and the mothership in front of the ship,
+	// far to near.
+	g.nShown = 0
+	if b := &g.boss; b.active && b.z > 1 {
+		sx, sy, sr := g.project(b.x, b.y, b.z, bossRadius)
+		g.addShown(g.mother, sx, sy, 2*1.4*sr, b.z)
+	}
 	for i := range g.enemies {
 		e := &g.enemies[i]
 		if (!e.alive && e.boom <= 0) || e.z < 1 {
 			continue
 		}
 		sx, sy, sr := g.project(e.x, e.y, e.z, e.radius())
-		s := g.rock
-		if e.kind == robot {
-			s = g.robot
-		}
+		s := g.kinds[e.kind]
 		if e.boom > 0 {
 			f := int((boomTime - e.boom) / boomTime * float32(len(g.boom)))
 			if f >= len(g.boom) {
 				f = len(g.boom) - 1
 			}
-			s, sr = g.boom[f], sr*1.4
+			s, sr = g.boom[f], sr*e.big
 		}
-		size := int16(2 * sr)
-		if size < 2 {
-			size = 2
-		}
-		h := size * s.h / s.w
-		o := shown{x: int16(sx) - size/2, y: int16(sy) - h/2, w: size, h: h, s: s, z: e.z}
-		j := n
-		for j > 0 && g.shown[j-1].z < o.z {
-			g.shown[j] = g.shown[j-1]
-			j--
-		}
-		g.shown[j] = o
-		n++
+		g.addShown(s, sx, sy, 2*sr, e.z)
 	}
+	n := g.nShown
 
 	ax, ay := int16(g.aimX), int16(g.aimY)
 	cross := g.crossColor
@@ -110,7 +102,12 @@ func (g *Game) render() {
 			if g.laser > 0 && y > ay {
 				g.laserRow(row, y, ax, ay)
 			}
-			g.crossRow(row, y, ax, ay, cross)
+			if g.screen != menuScreen {
+				g.crossRow(row, y, ax, ay, cross)
+			}
+			if g.boss.active && g.boss.dying <= 0 && y >= 6 && y < 12 {
+				g.gaugeRow(row, y-6)
+			}
 			if g.flash > 0 && (y < 3 || y >= l.viewH-3) {
 				for x := range row {
 					row[x] = g.flashColor
@@ -134,6 +131,23 @@ func (g *Game) render() {
 	}
 }
 
+// gaugeRow draws row r (0 to 5) of the mothership's gauge at the top of
+// the view: a frame and the hit points left.
+func (g *Game) gaugeRow(row []uint16, r int16) {
+	x0, x1 := g.w/4, g.w*3/4
+	if r == 0 || r == 5 {
+		for x := x0; x <= x1; x++ {
+			row[x] = g.gaugeEdge
+		}
+		return
+	}
+	row[x0], row[x1] = g.gaugeEdge, g.gaugeEdge
+	full := x0 + 1 + (x1-x0-1)*int16(g.boss.hp)/int16(g.boss.max)
+	for x := x0 + 1; x < full; x++ {
+		row[x] = g.gaugeFill
+	}
+}
+
 // laserRow draws row y of the two beams from the bottom corners of the
 // view to the crosshair at (ax, ay).
 func (g *Game) laserRow(row []uint16, y, ax, ay int16) {
@@ -153,23 +167,44 @@ func (g *Game) laserRow(row []uint16, y, ax, ay int16) {
 // in the middle and a dot.
 func (g *Game) crossRow(row []uint16, y, ax, ay int16, c uint16) {
 	const arm, gap = 7, 3
-	set := func(x int16) {
-		if x >= 0 && x < g.w {
-			row[x] = c
-		}
-	}
 	switch d := y - ay; {
 	case d == 0:
 		for x := ax - gap - arm; x < ax-gap; x++ {
-			set(x)
+			set(row, x, c)
 		}
 		for x := ax + gap + 1; x <= ax+gap+arm; x++ {
-			set(x)
+			set(row, x, c)
 		}
-		set(ax)
+		set(row, ax, c)
 	case (d >= -gap-arm && d < -gap) || (d > gap && d <= gap+arm):
-		set(ax)
+		set(row, ax, c)
 	}
+}
+
+// set sets pixel x of row if it is inside.
+func set(row []uint16, x int16, c uint16) {
+	if x >= 0 && int(x) < len(row) {
+		row[x] = c
+	}
+}
+
+// addShown adds a sprite width pixels wide at (sx, sy) to the shown list,
+// which is kept far to near. (A method, not a closure: a closure would be
+// allocated every frame.)
+func (g *Game) addShown(s *sprite, sx, sy, width, z float32) {
+	size := int16(width)
+	if size < 2 {
+		size = 2
+	}
+	h := size * s.h / s.w
+	o := shown{x: int16(sx) - size/2, y: int16(sy) - h/2, w: size, h: h, s: s, z: z}
+	j := g.nShown
+	for j > 0 && g.shown[j-1].z < o.z {
+		g.shown[j] = g.shown[j-1]
+		j--
+	}
+	g.shown[j] = o
+	g.nShown++
 }
 
 // scaledRow draws row r of sprite s stretched to w pixels over row, from

@@ -61,18 +61,20 @@ func TestStartEachGameAndComeBack(t *testing.T) {
 		"SOLITAIRE": {37, 11},
 		"POKER":     {33, 253},
 		"KART":      {50, 22},
+		"SPACE":     {50, 22},
 	}
 	// Tap each tile, where possible where the game's first screen has a
-	// button or a card (invaders: anywhere starts the game; othello: WHITE;
-	// solitaire: a column; poker: MAX BET), so a tap leaking into the game
-	// would be noticed. (No sudoku button is under its tile.)
+	// button (invaders: anywhere starts the game; othello: WHITE; poker:
+	// BET ONE; kart: NORMAL; space: HARD), so a tap leaking into the game
+	// would be noticed.
 	taps := map[string][2]int16{
 		"INVADERS":  {60, 80},
-		"SUDOKU":    {240, 80},
-		"OTHELLO":   {350, 120},
-		"SOLITAIRE": {60, 150},
-		"POKER":     {200, 238},
-		"KART":      {400, 190}, // HARD
+		"SUDOKU":    {180, 80},
+		"OTHELLO":   {300, 120},
+		"SOLITAIRE": {420, 120},
+		"POKER":     {90, 238},
+		"KART":      {200, 190},
+		"SPACE":     {320, 150},
 	}
 	testStartEachGameAndComeBack(t, board.Width, board.Height, backs, taps)
 }
@@ -85,14 +87,16 @@ func TestStartEachGameAndComeBackSmall(t *testing.T) {
 		"SOLITAIRE": {27, 11},
 		"POKER":     {27, 217},
 		"KART":      {50, 22},
+		"SPACE":     {50, 22},
 	}
 	taps := map[string][2]int16{
-		"INVADERS":  {60, 80},
-		"SUDOKU":    {160, 80},
-		"OTHELLO":   {250, 115},
-		"SOLITAIRE": {25, 150},
-		"POKER":     {138, 215},
-		"KART":      {260, 170}, // HARD
+		"INVADERS":  {60, 60},
+		"SUDOKU":    {160, 60},
+		"OTHELLO":   {260, 60},
+		"SOLITAIRE": {25, 120}, // a card
+		"POKER":     {160, 120},
+		"KART":      {260, 157}, // HARD
+		"SPACE":     {50, 190},
 	}
 	testStartEachGameAndComeBack(t, 320, 240, backs, taps)
 }
@@ -140,10 +144,14 @@ func TestTilesFit(t *testing.T) {
 		l := layoutFor(s.w, s.h)
 		for k, e := range entries {
 			r := l.tileRect(k)
-			for _, x := range []struct {
+			texts := []struct {
 				font tinyfont.Fonter
 				text string
-			}{{nameFont, e.name}, {aboutFont, e.about}} {
+			}{{nameFont, e.name}, {aboutFont, e.about}}
+			if l.aboutBase == 0 {
+				texts = texts[:1]
+			}
+			for _, x := range texts {
 				if _, w := tinyfont.LineWidth(x.font, x.text); int16(w) > r.w-4 {
 					t.Errorf("%dx%d: %s: %q is %dpx, tile is %dpx", s.w, s.h, e.name, x.text, w, r.w)
 				}
@@ -179,16 +187,17 @@ func TestPad(t *testing.T) {
 		press(l, f, hal.PadLeft) // nothing to the left: only shows the focus
 		for k, e := range entries {
 			// Walk to tile k: the first row, then the second.
+			cols := l.l.cols
 			for n := 0; l.focus != k; n++ {
-				if n > 6 {
+				if n > 8 {
 					t.Fatalf("%dx%d: tile %d not reached (focus %d)", s.w, s.h, k, l.focus)
 				}
 				switch {
-				case k/3 > l.focus/3:
+				case k/cols > l.focus/cols:
 					press(l, f, hal.PadDown)
-				case k/3 < l.focus/3:
+				case k/cols < l.focus/cols:
 					press(l, f, hal.PadUp)
-				case k%3 > l.focus%3:
+				case k%cols > l.focus%cols:
 					press(l, f, hal.PadRight)
 				default:
 					press(l, f, hal.PadLeft)

@@ -10,6 +10,7 @@ import (
 	"github.com/sat0ken/tinygo-cyd/games/othello"
 	"github.com/sat0ken/tinygo-cyd/games/poker"
 	"github.com/sat0ken/tinygo-cyd/games/solitaire"
+	"github.com/sat0ken/tinygo-cyd/games/starguard"
 	"github.com/sat0ken/tinygo-cyd/games/sudoku"
 	"github.com/sat0ken/tinygo-cyd/hal"
 	"github.com/sat0ken/tinygo-cyd/pad"
@@ -83,6 +84,12 @@ var entries = []entry{
 		g.DrawMenu()
 		return g
 	}},
+	{"SPACE", "star guard", drawSpaceIcon, func(l *Launcher) game {
+		g := starguard.NewGame(l.d, l.t, l.Seed())
+		g.OnExit, g.Pad = l.exit, l.Pad
+		g.DrawMenu()
+		return g
+	}},
 }
 
 // Fonts of the tiles (TestTilesFit checks that the texts fit).
@@ -91,37 +98,39 @@ var (
 	aboutFont = &proggy.TinySZ8pt7b
 )
 
-// layout is where the tiles are: a 3x2 grid.
+// layout is where the tiles are: a grid of cols columns.
 type layout struct {
 	titleBase           int16
+	cols                int
 	tile0               rect // the first tile
 	stepX, stepY        int16
-	icon                rect // the icon inside a tile; the icons scale with its height
-	nameBase, aboutBase int16
+	icon                rect  // the icon inside a tile; the icons scale with its height
+	nameBase, aboutBase int16 // aboutBase 0: no line under the name
 	footBase            int16 // "tap a game"
 }
 
-// layoutFor returns the layout for a w x h screen: the 480x272 one, or the
-// 320x240 one (ESP32-2432S028R) on smaller screens.
+// layoutFor returns the layout for a w x h screen: 4x2 tiles on 480x272,
+// 3x3 smaller tiles without the line under the name on 320x240
+// (ESP32-2432S028R).
 func layoutFor(w, h int16) layout {
 	if w >= 480 && h >= 272 {
 		return layout{
-			titleBase: 23, tile0: rect{10, 32, 148, 100}, stepX: 156, stepY: 108,
-			icon: rect{8, 5, 148 - 16, 56}, nameBase: 78, aboutBase: 93, footBase: 262,
+			titleBase: 23, cols: 4, tile0: rect{7, 32, 112, 100}, stepX: 118, stepY: 108,
+			icon: rect{4, 5, 112 - 8, 56}, nameBase: 78, aboutBase: 93, footBase: 262,
 		}
 	}
 	// Tiles 104 pixels wide: SOLITAIRE in bold is 99.
 	return layout{
-		titleBase: 21, tile0: rect{1, 26, 104, 100}, stepX: 106, stepY: 103,
-		icon: rect{4, 4, 104 - 8, 46}, nameBase: 70, aboutBase: 86, footBase: h - 3,
+		titleBase: 21, cols: 3, tile0: rect{1, 26, 104, 65}, stepX: 106, stepY: 68,
+		icon: rect{4, 4, 104 - 8, 38}, nameBase: 59, footBase: h - 3,
 	}
 }
 
 // tileRect is tile k of the grid.
 func (l *layout) tileRect(k int) rect {
 	r := l.tile0
-	r.x += int16(k%3) * l.stepX
-	r.y += int16(k/3) * l.stepY
+	r.x += int16(k%l.cols) * l.stepX
+	r.y += int16(k/l.cols) * l.stepY
 	return r
 }
 
@@ -173,6 +182,8 @@ func (l *Launcher) Playing() string {
 		return "POKER"
 	case *kart.Game:
 		return "KART"
+	case *starguard.Game:
+		return "SPACE"
 	}
 	return "?"
 }
@@ -196,7 +207,9 @@ func (l *Launcher) drawTile(k int) {
 	i := l.l.icon
 	e.icon(l, rect{r.x + i.x, r.y + i.y, i.w, i.h})
 	center(l.d, r, nameFont, e.name, textColor, l.l.nameBase)
-	center(l.d, r, aboutFont, e.about, dimText, l.l.aboutBase)
+	if l.l.aboutBase > 0 {
+		center(l.d, r, aboutFont, e.about, dimText, l.l.aboutBase)
+	}
 	if l.in.Used && k == l.focus {
 		pad.Frame(l.d, r.x, r.y, r.w, r.h, 3, focusColor)
 	}
@@ -214,7 +227,7 @@ func (l *Launcher) updatePad(dt float32) int {
 		l.d.Display()
 	}
 	if d := l.in.Direction(); d != 0 {
-		var boxes [6]pad.Box // the grid has six places
+		var boxes [9]pad.Box // the grids have up to nine places
 		for k := range entries {
 			r := l.l.tileRect(k)
 			boxes[k] = pad.Box{X: r.x, Y: r.y, W: r.w, H: r.h}
@@ -325,6 +338,10 @@ func drawSudokuIcon(l *Launcher, r rect) {
 		c, r int16
 		s    string
 	}{{0, 0, "5"}, {2, 0, "3"}, {1, 1, "9"}, {0, 2, "7"}, {2, 2, "1"}} {
+		if cell < 14 { // small icons: the small font
+			tinyfont.WriteLine(l.d, &proggy.TinySZ8pt7b, x0+d.c*cell+(cell-5)/2+1, y0+d.r*cell+(cell+6)/2+1, d.s, digitColor)
+			continue
+		}
 		tinyfont.WriteLine(l.d, &freesans.Bold9pt7b, x0+d.c*cell+(cell-9)/2+1, y0+d.r*cell+(cell+12)/2+1, d.s, digitColor)
 	}
 }
@@ -385,6 +402,30 @@ func drawKartIcon(l *Launcher, r rect) {
 	l.d.FillRectangle(cx+2*u, by-3*u, 2*u, 3*u, black)
 	l.d.FillRectangle(cx-3*u, by-4*u, 6*u, 3*u, blue) // body
 	l.d.FillRectangle(cx-u, by-6*u, 2*u, 2*u, color.RGBA{250, 200, 40, 255})
+}
+
+func drawSpaceIcon(l *Launcher, r rect) {
+	// Space: stars, a rock, a robot ship and the crosshair.
+	w := r.h * 3 / 2
+	x0, y0 := r.x+(r.w-w)/2, r.y
+	l.d.FillRectangle(x0, y0, w, r.h, color.RGBA{6, 8, 20, 255})
+	white := color.RGBA{200, 200, 230, 255}
+	for _, p := range [...][2]int16{{3, 4}, {20, 9}, {37, 3}, {46, 20}, {9, 22}, {28, 25}, {52, 6}, {15, 15}} {
+		l.d.FillRectangle(x0+p[0]*w/56, y0+p[1]*r.h/28, 1, 1, white)
+	}
+	u := r.h / 14 // 4 on 56 pixels
+	tinydraw.FilledCircle(l.d, x0+w/4, y0+r.h/2+u, 2*u, color.RGBA{130, 115, 100, 255})
+	tinydraw.FilledCircle(l.d, x0+w/4-u/2, y0+r.h/2, u/2+1, color.RGBA{175, 160, 145, 255})
+	rx, ry := x0+w*3/4-2*u, y0+r.h/3
+	l.d.FillRectangle(rx, ry, 4*u, 2*u, color.RGBA{200, 205, 220, 255})
+	l.d.FillRectangle(rx+u/2, ry+u/2, u, u, color.RGBA{240, 50, 50, 255})
+	l.d.FillRectangle(rx+5*u/2, ry+u/2, u, u, color.RGBA{240, 50, 50, 255})
+	green := color.RGBA{80, 255, 120, 255}
+	cx, cy := x0+w*3/4, y0+r.h*2/3
+	l.d.FillRectangle(cx-3*u, cy, 2*u, 1, green)
+	l.d.FillRectangle(cx+u+1, cy, 2*u, 1, green)
+	l.d.FillRectangle(cx, cy-3*u, 1, 2*u, green)
+	l.d.FillRectangle(cx, cy+u+1, 1, 2*u, green)
 }
 
 // vsyncWaiter is implemented by rgblcd.Device.
