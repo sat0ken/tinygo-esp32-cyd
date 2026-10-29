@@ -91,6 +91,7 @@ make wasm PKG=./cmd/games && make serve   # ブラウザ
 | 17_fifteen | 同じく PicoLibSDK の 15 パズル（[games/fifteen](games/fifteen/fifteen.go)）。矢印でタイルを穴に動かして 1〜15 に並べる。A で混ぜ直し、X で自動で解く（ボタンで止まる）、Y でやめる。揃うと点滅し、ボタンで次のゲーム。ジョイスティックがなければ 3×3 のタッチのボタン（[PicoPad のゲーム](#picopad-のゲーム)）。wasm でも動く | タイルが動く、X で最後まで解ける |
 | 18_life | 同じく PicoLibSDK のライフゲーム（[games/life](games/life/life.go)）。50×50 の世界（端はつながる）の中央 20×15 を表示。矢印でカーソル、A でセルを反転、B で動かす（ボタンで止めると動かす前に戻る）、X で次のスロット（グライダー銃などの模様が入っている 10 個）、Y でやめる。ジョイスティックがなければ 3×3 のタッチのボタン（[PicoPad のゲーム](#picopad-のゲーム)）。wasm でも動く | セルが反転する、B で動く・止めると戻る |
 | 19_tvtennis | 同じく PicoLibSDK のテニス（[games/tvtennis](games/tvtennis/tvtennis.go)）。最初の画面で LEFT/RIGHT が片方のパドルで CPU と対戦、DOWN が2人、UP がデモ、A が両方のパドルを1人で。UP/DOWN が左のパドル、X/A が右のパドル、LEFT/RIGHT/B でサーブ、Y で最初の画面へ（そこで Y でやめる）。wasm でも動く | パドルが動く、ボールが跳ね返る・点が入る |
+| 20_atoms | 同じく PicoLibSDK の原子の陣取り（[games/atoms](games/atoms/atoms.go)）。最大5人（人か CPU）が 10×10 の盤に順に原子を置き、隣の数だけたまると爆発して隣を取る。最初の画面で LEFT・UP・RIGHT・DOWN・B が各プレイヤーの種類、A で開始。矢印でカーソル、A で置く、Y で最初の画面へ（そこで Y でやめる）。全員 CPU ならデモ。wasm でも動く | 原子が置ける・爆発して隣を取る、CPU が打つ |
 
 02_colorbars はシリアルから1文字コマンドを受け付ける：
 `c` カラーバー、`r`/`g`/`b`/`w`/`k` 単色（赤/緑/青/白/黒）、`d` レジスタを再ダンプ。
