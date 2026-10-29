@@ -407,6 +407,9 @@ func TestRand(t *testing.T) {
 		if r := c.RandU8MinMax(1, 50); r < 1 || r > 50 {
 			t.Fatalf("RandU8MinMax(1, 50) = %d", r)
 		}
+		if r := c.RandS8MinMax(-10, 10); r < -10 || r > 10 {
+			t.Fatalf("RandS8MinMax(-10, 10) = %d", r)
+		}
 		if r := c.RandU16MinMax(100, 200); r < 100 || r > 200 {
 			t.Fatalf("RandU16MinMax(100, 200) = %d", r)
 		}
