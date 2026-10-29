@@ -342,6 +342,9 @@ func TestRand(t *testing.T) {
 		if r := c.RandU16Max(1000); r > 1000 {
 			t.Fatalf("RandU16Max(1000) = %d", r)
 		}
+		if r := c.RandS16Max(-300); r < -300 || r > 0 {
+			t.Fatalf("RandS16Max(-300) = %d", r)
+		}
 	}
 	for v, ok := range seen {
 		if !ok {

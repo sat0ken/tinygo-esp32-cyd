@@ -49,6 +49,14 @@ func (c *Console) RandU16Max(max uint16) uint16 {
 	}
 }
 
+// RandS16Max returns a random number from 0 to max (max can be negative).
+func (c *Console) RandS16Max(max int16) int16 {
+	if max >= 0 {
+		return int16(c.RandU16Max(uint16(max)))
+	}
+	return -int16(c.RandU16Max(uint16(-max)))
+}
+
 // mask returns v with all the bits below its highest bit set (Mask).
 func mask(v uint32) uint32 {
 	v |= v >> 1
