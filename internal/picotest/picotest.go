@@ -10,17 +10,21 @@ import (
 	"github.com/sat0ken/tinygo-cyd/hal"
 )
 
-// Clock is a picopad.Clock in fake time. Each Now advances it by 1µs (the
-// time the game spends), so that a game waiting in a loop goes on; Sleep
-// advances it by the time slept. Past Limit the test fails.
+// Clock is a picopad.Clock in fake time. Each Now advances it by Step
+// (1µs if 0: the time the game spends), so that a game waiting in a loop
+// goes on; Sleep advances it by the time slept. Past Limit the test fails.
 //
 // The functions of At run in Sleep: a game sleeps after DispUpdate, so
 // its screen is up to date then.
 type Clock struct {
 	T     time.Duration
 	Limit time.Duration
-	tb    testing.TB
-	at    []call
+	// Step is how far each Now goes. A game that draws in a loop without
+	// sleeping (MAZE) needs more, or a second of game time draws thousands
+	// of frames.
+	Step time.Duration
+	tb   testing.TB
+	at   []call
 }
 
 type call struct {
@@ -38,7 +42,7 @@ func NewClock(tb testing.TB, limit time.Duration) *Clock {
 func (c *Clock) At(t time.Duration, f func()) { c.at = append(c.at, call{t, f}) }
 
 func (c *Clock) Now() time.Duration {
-	c.advance(time.Microsecond)
+	c.advance(max(c.Step, time.Microsecond))
 	return c.T
 }
 
