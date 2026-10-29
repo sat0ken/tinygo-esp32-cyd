@@ -7,6 +7,7 @@ import (
 	"machine"
 
 	"github.com/sat0ken/tinygo-cyd/board/s028"
+	"github.com/sat0ken/tinygo-cyd/espdma"
 	"github.com/sat0ken/tinygo-cyd/hal"
 	"github.com/sat0ken/tinygo-cyd/spilcd"
 	"github.com/sat0ken/tinygo-cyd/touchcal"
@@ -43,7 +44,7 @@ func InitScreen() (*spilcd.Device, error) {
 	cs.Configure(machine.PinConfig{Mode: machine.PinOutput})
 	cs.Set(true)
 
-	d := spilcd.New(spi, dc, cs)
+	d := spilcd.New(espdma.New(spi), dc, cs) // DrawRGBBitmap8Async sends with DMA
 	d.Configure(spilcd.Config{Width: s028.Width, Height: s028.Height, MADCTL: s028.MADCTL, Invert: s028.Invert, Init: spilcd.InitILI9341})
 	cfg.Frequency = s028.SPIFrequency
 	if err := spi.Configure(cfg); err != nil {

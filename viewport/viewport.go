@@ -15,6 +15,12 @@ type bitmapDrawer interface {
 	DrawRGBBitmap8(x, y int16, data []uint8, w, h int16) error
 }
 
+// asyncDrawer is spilcd.Device.
+type asyncDrawer interface {
+	DrawRGBBitmap8Async(x, y int16, data []uint8, w, h int16) error
+	Wait()
+}
+
 // Display is a w x h window at (x, y) of another display.
 type Display struct {
 	d          hal.Display
@@ -117,4 +123,21 @@ func clamp(v, size int16) int16 {
 		return size - 1
 	}
 	return v
+}
+
+// DrawRGBBitmap8Async draws in the background if the display can (see
+// spilcd.Device.DrawRGBBitmap8Async) and the bitmap is inside the window.
+func (v *Display) DrawRGBBitmap8Async(x, y int16, data []uint8, w, h int16) error {
+	ad, ok := v.d.(asyncDrawer)
+	if ok && x >= 0 && y >= 0 && x+w <= v.w && y+h <= v.h {
+		return ad.DrawRGBBitmap8Async(v.x+x, v.y+y, data, w, h)
+	}
+	return v.DrawRGBBitmap8(x, y, data, w, h)
+}
+
+// Wait waits for a DrawRGBBitmap8Async block to be sent.
+func (v *Display) Wait() {
+	if ad, ok := v.d.(asyncDrawer); ok {
+		ad.Wait()
+	}
 }

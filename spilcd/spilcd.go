@@ -10,6 +10,11 @@
 // when the next pixel does not continue it. Display (and every other
 // drawing call) sends the last run.
 //
+// With a bus that can send in the background (AsyncBus, package espdma on
+// the ESP32), DrawRGBBitmap8Async starts a block and returns: the caller
+// can prepare the next one meanwhile. CS stays low until the block is out;
+// every other call waits for it first.
+//
 // The package does not import machine: the SPI bus and the pins are small
 // interfaces, so the command stream can be tested on the host.
 package spilcd
@@ -22,6 +27,15 @@ import (
 // Bus is an SPI bus (machine.SPI).
 type Bus interface {
 	Tx(w, r []byte) error
+}
+
+// AsyncBus is a Bus that can also send a block in the background (DMA):
+// StartTx returns at once, and the block must not change until Wait
+// returns. Tx waits for it first.
+type AsyncBus interface {
+	Bus
+	StartTx(w []byte)
+	Wait()
 }
 
 // Pin is an output pin (machine.Pin).
@@ -85,6 +99,8 @@ type Device struct {
 	// The pending run of SetPixel calls.
 	runX, runY, runN int16
 	runC             color.RGBA
+
+	sending bool // a DrawRGBBitmap8Async block is going out (CS is low)
 
 	buf [bufSize]byte
 	cmd [4]byte
@@ -181,6 +197,7 @@ func (d *Device) Config() Config { return d.cfg }
 
 // Command sends a command and its parameters.
 func (d *Device) Command(cmd byte, data ...byte) {
+	d.Wait()
 	d.cs.Set(false)
 	d.sendCmd(cmd)
 	if len(data) > 0 {
@@ -194,6 +211,7 @@ func (d *Device) Command(cmd byte, data ...byte) {
 // byte for most commands.
 func (d *Device) Read(cmd byte, n int) [4]byte {
 	d.flush()
+	d.Wait()
 	var r [4]byte
 	d.cs.Set(false)
 	d.sendCmd(cmd)
@@ -305,6 +323,7 @@ func (d *Device) fill(x, y, w, h int16, c color.RGBA) {
 	for i := 0; i < n; i += 2 {
 		d.buf[i], d.buf[i+1] = hi, lo
 	}
+	d.Wait()
 	d.cs.Set(false)
 	d.window(x, y, x+w-1, y+h-1)
 	for total > 0 {
@@ -322,6 +341,7 @@ func (d *Device) fill(x, y, w, h int16, c color.RGBA) {
 // format the panel takes, so they are sent as they are).
 func (d *Device) DrawRGBBitmap8(x, y int16, data []uint8, w, h int16) error {
 	d.flush()
+	d.Wait()
 	if len(data) < int(w)*int(h)*2 {
 		return errShortData
 	}
@@ -343,6 +363,45 @@ func (d *Device) DrawRGBBitmap8(x, y int16, data []uint8, w, h int16) error {
 	}
 	d.cs.Set(true)
 	return nil
+}
+
+// DrawRGBBitmap8Async is DrawRGBBitmap8 in the background: with an
+// AsyncBus it starts sending and returns, and data must not change until
+// the next call to the device (or Wait). Without one, or if the bitmap is
+// cut at the left or right edge, it draws at once.
+func (d *Device) DrawRGBBitmap8Async(x, y int16, data []uint8, w, h int16) error {
+	ab, ok := d.bus.(AsyncBus)
+	if !ok {
+		return d.DrawRGBBitmap8(x, y, data, w, h)
+	}
+	d.flush()
+	d.Wait()
+	if len(data) < int(w)*int(h)*2 {
+		return errShortData
+	}
+	cx, cy, cw, ch, ok := d.clip(x, y, w, h)
+	if !ok {
+		return nil
+	}
+	if cw != w {
+		return d.DrawRGBBitmap8(x, y, data, w, h)
+	}
+	d.cs.Set(false)
+	d.window(cx, cy, cx+cw-1, cy+ch-1)
+	start := int(cy-y) * int(w) * 2
+	ab.StartTx(data[start : start+int(cw)*int(ch)*2])
+	d.sending = true
+	return nil
+}
+
+// Wait waits for a block of DrawRGBBitmap8Async to be sent.
+func (d *Device) Wait() {
+	if !d.sending {
+		return
+	}
+	d.bus.(AsyncBus).Wait()
+	d.cs.Set(true)
+	d.sending = false
 }
 
 type errorString string

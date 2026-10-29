@@ -66,7 +66,8 @@ ESP32-4827S043（ESP32-S3 + 4.3インチ 480×272 RGB 液晶）を TinyGo で動
 | [xpttouch/](../xpttouch/) | XPT2046 タッチの読み取り | 実機 |
 | [touchcal/](../touchcal/calib.go) | タッチの raw 値 → 画面座標、4隅からのキャリブレーション | 全部 |
 | [romfont/](../romfont/romfont.go) | フォントを文字列にしてフラッシュに置く（tinyfont と同じ描画）。`go generate ./romfont` で [tools/fontgen](../tools/fontgen/main.go) が作る | 全部 |
-| [spilcd/](../spilcd/spilcd.go) | SPI 液晶（ST7796・ILI9341）のドライバ。フレームバッファなし | 実機（ホストでもテスト） |
+| [spilcd/](../spilcd/spilcd.go) | SPI 液晶（ST7796・ILI9341）のドライバ。フレームバッファなし。DMA で裏で送れる（`DrawRGBBitmap8Async`） | 実機（ホストでもテスト） |
+| [espdma/](../espdma/espdma.go) | ESP32 の SPI を DMA で送る（`machine.SPI` を包む） | 実機 |
 | [board/s035/](../board/s035/s035.go)・[gt911/](../gt911/gt911.go)・[viewport/](../viewport/viewport.go) | ESP32-3248S035C 用（[15章](#15-esp32-3248s035c35インチspi-液晶)） | 実機（ドライバはホストでもテスト） |
 | [board/s028/](../board/s028/s028.go) | ESP32-2432S028R 用（[16章](#16-esp32-2432s028r28インチ320240)） | 全部 |
 | [internal/panelcheck/](../internal/panelcheck/panelcheck.go) | SPI 液晶基板の確認プログラム（s035_check・s028_check）の共通部分 | 実機 |
@@ -720,6 +721,8 @@ ESP32（無印、PSRAM なし）、ST7796（320×480、SPI）、GT911（静電�
 - 480×320×2 = 300KB のフレームバッファは RAM に入らないので持たない。`FillRectangle` は「アドレス窓（CASET・RASET）→ RAMWR → 色を繰り返し送る」。`DrawRGBBitmap8` のバイト列（ビッグエンディアン RGB565）はそのまま液晶の形式なので、そのまま送る。
 - **SetPixel のまとめ送り**：1点ごとに窓を設定すると遅い。tinyfont は文字を左上から1行ずつ1点ずつ描くので、同じ行で右に続く同じ色の点を「ラン」にまとめ、続かなくなったときに1本の矩形として送る。まだ送っていないランは `Display()` か次の描画で送る。
 - 前回と同じ CASET・RASET は送らない（同じ行のランは列だけ変わる）。
+- **DMA で裏で送る**（[espdma](../espdma/espdma.go)）：TinyGo の `machine.SPI.Tx` は SPI の 64 バイトのバッファに詰めては送り終わりを待つので、送っている間 CPU は何もできない。`espdma.SPI` は `machine.SPI2` を包み、`StartTx` で DMA の送信を始めてすぐ戻る（`Tx` は先に送り終わりを待つ）。`spilcd.DrawRGBBitmap8Async` はこれを使い、送っている間 CS を Low のままにする。ほかの描画はすべて、先に送り終わりを待つ（`Wait`）。カート（`games/kart`）は2つのバッファで、片方を送りながらもう片方に次の8行を描き、24 → 46 fps になった。
+- **DMA の始め方**：DMA を始めてすぐ SPI を動かすと、40MHz では DMA が SPI の 32 バイトの FIFO を埋める前に送り始め、FIFO に残っていた前回の最後の 32 バイトが先に出た（画面では左端 16 ピクセルに1行上の右端が出る）。MOSI を GPIO マトリクスで MISO に折り返して確かめた（500kHz〜2MHz では出ない、40MHz で出る、約 1µs 待てば出ない）。`StartTx` は DMA を始めてから SPI のレジスタを 64 回読んで（約 3µs）から送り始める。
 - 速さ（実測、SPI 40MHz）：480×320 の全画面塗りつぶし 77ms（理論値 61ms）、freesans Bold 9pt の文字 300 字で 137ms（1字 約 0.5ms）。
 - 液晶からの読み出しはできない（ID が常に 0。MISO が液晶につながっていないらしい）。描画には不要。
 - テストは液晶の側を真似る [panel](../spilcd/spilcd_test.go)（コマンドを解釈して画素を持つ）を作り、フレームバッファに同じものを描いた結果と画素単位で比べる。

@@ -232,3 +232,68 @@ func TestRGB565(t *testing.T) {
 		}
 	}
 }
+
+// asyncPanel sends StartTx blocks only when Wait is called (the latest
+// a DMA transfer can end), keeping a copy, so that a block overwritten
+// too early would show.
+type asyncPanel struct {
+	*panel
+	block   []byte
+	pending bool
+	csLow   bool // CS was low all the time a block was pending
+}
+
+func (a *asyncPanel) Tx(w, r []byte) error {
+	a.Wait()
+	return a.panel.Tx(w, r)
+}
+
+func (a *asyncPanel) StartTx(w []byte) {
+	a.Wait()
+	a.block = append(a.block[:0], w...)
+	a.pending, a.csLow = true, !a.cs
+}
+
+func (a *asyncPanel) Wait() {
+	if !a.pending {
+		return
+	}
+	a.pending = false
+	if a.cs {
+		a.csLow = false
+	}
+	a.panel.Tx(a.block, nil)
+}
+
+// TestAsync draws bands with DrawRGBBitmap8Async from two buffers, like
+// games/kart, then text over them: the picture is as with the frame
+// buffer, CS stays low while a band goes out.
+func TestAsync(t *testing.T) {
+	p := newPanel(64, 48)
+	a := &asyncPanel{panel: p}
+	d := New(a, pinFunc(func(v bool) { p.dc = v }), pinFunc(func(v bool) { p.cs = v }))
+	d.Sleep = func(time.Duration) {}
+	d.Configure(Config{Width: 64, Height: 48, MADCTL: 0x28, Init: InitST7796})
+	fb := memlcd.New(64, 48)
+
+	var bufs [2][64 * 8 * 2]byte
+	for band := 0; band < 6; band++ {
+		buf := &bufs[band%2]
+		for i := range buf {
+			buf[i] = byte(band*31 + i)
+		}
+		d.DrawRGBBitmap8Async(0, int16(band*8), buf[:], 64, 8)
+		fb.DrawRGBBitmap8(0, int16(band*8), buf[:], 64, 8)
+		if !a.csLow || !d.sending {
+			t.Fatalf("band %d: CS not held low while it is sent", band)
+		}
+	}
+	white := color.RGBA{255, 255, 255, 255}
+	tinyfont.WriteLine(d, &freesans.Bold9pt7b, 2, 20, "Hi", white)
+	tinyfont.WriteLine(fb, &freesans.Bold9pt7b, 2, 20, "Hi", white)
+	d.Display()
+	compare(t, p, fb, "async")
+	if a.pending || d.sending || !p.cs {
+		t.Error("a block still pending after drawing on top")
+	}
+}
