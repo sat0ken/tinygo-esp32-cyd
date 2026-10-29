@@ -72,8 +72,8 @@ type palTable struct {
 	inx [256]uint8
 }
 
-// maxTables is how many palettes the console remembers (ANTS, the game
-// with the most, has 18).
+// maxTables is how many palettes the console remembers (GHOSTRAC, the
+// game with the most, has 27).
 const maxTables = 32
 
 type bitmapDrawer interface {
@@ -176,6 +176,12 @@ func (c *Console) freePalette() {
 	c.ncol = 0
 	c.gen++
 }
+
+// PrepPalette gives the colours of pal their frame buffer indices now. A
+// game that draws more than 256 colours chooses so which colours are
+// exact: the ones that come when the palette is full get the nearest
+// colour. (The PicoPad has a 16-bit frame buffer and no such function.)
+func (c *Console) PrepPalette(pal Palette) { c.table(pal) }
 
 // table returns the frame buffer indices of the entries of pal.
 func (c *Console) table(pal Palette) *[256]uint8 {

@@ -1,6 +1,7 @@
 package picopad
 
 import (
+	"math"
 	"testing"
 	"time"
 
@@ -131,6 +132,65 @@ func TestSaveRect(t *testing.T) {
 	}
 	c.SaveRect(buf, -2, -1, 8, 2) // only the pixels on the screen
 	c.RestoreRect(buf, -2, -1, 8, 2)
+}
+
+func TestDrawImg4PalMat(t *testing.T) {
+	c, _, _, _ := newTest(t, Width, Height)
+	pal := palette(ColBlack, ColRed, ColGreen, ColBlue)
+	// 4 x 2 pixels: 1 2 3 0 / 3 0 1 2
+	img := "\x12\x30" + "\x30\x12"
+	var m Mat2D
+	m.PrepDrawImg(4, 2, 2, 1, 4, 2, 0, 0, 0, 0, 0) // the same size
+	c.DrawImg4PalMat(img, pal, 4, 2, 10, 10, 4, 2, &m, DrawImgTransp, ColBlack)
+	c.DrawImg4Pal(img, pal, 0, 0, 10, 20, 4, 2, 4)
+	m.PrepDrawImg(4, 2, 2, 1, 8, 4, 0, 0, 0, 0, 0) // twice the size
+	c.DrawImg4PalMat(img, pal, 4, 2, 10, 30, 8, 4, &m, DrawImgNoBorder, 0)
+	m.PrepDrawImg(4, 2, 2, 1, 4, 2, 0, 0, math.Pi, 0, 0) // turned around
+	c.DrawImg4PalMat(img, pal, 4, 2, 20, 10, 4, 2, &m, DrawImgColor, ColWhite)
+	for y := 0; y < 2; y++ {
+		for x := 0; x < 4; x++ {
+			want := c.DrawGetPoint(10+x, 20+y) // black is transparent: the black screen
+			if got := c.DrawGetPoint(10+x, 10+y); got != want {
+				t.Errorf("same size %d,%d: %#04x, want %#04x", x, y, got, want)
+			}
+			for _, p := range [][2]int{{10 + 2*x, 30 + 2*y}, {11 + 2*x, 31 + 2*y}} {
+				if got := c.DrawGetPoint(p[0], p[1]); got != want {
+					t.Errorf("twice %d,%d: %#04x, want %#04x", x, y, got, want)
+				}
+			}
+		}
+	}
+	// turned by 180 degrees about the point 2,1: the source x is 2-x0, y
+	// 1-y0 (x0 -2..1, y0 -1..0), out of the image white; sin(float32(pi))
+	// is a little below 0, so m21 is -1/4096 and the last pixels of the
+	// rows go a row up, as in the SDK
+	for x, want := range []Color{ColWhite, ColWhite, ColWhite, ColBlack, ColWhite, ColGreen, ColRed, ColGreen} {
+		if got := c.DrawGetPoint(20+x%4, 10+x/4); got != want {
+			t.Errorf("turned %d,%d: %#04x, want %#04x", x%4, x/4, got, want)
+		}
+	}
+}
+
+func TestDrawTile4PalMap(t *testing.T) {
+	c, _, _, _ := newTest(t, Width, Height)
+	pal := palette(ColBlack, ColRed, ColGreen, ColBlue)
+	// 2 tiles of 2x2 pixels: tile 0 all red (1), tile 1 all blue (3)
+	tiles := "\x11\x11" + "\x33\x33"
+	// a map of 2x2 tiles: 0 1 / 1 0
+	tilemap := "\x00\x01\x01\x00"
+	var m Mat2D
+	m.PrepDrawImg(4, 4, 2, 2, 4, 4, 0, 0, 0, 0, 0) // the map 1:1, its middle in the middle
+	c.DrawTile4PalMap(tiles, pal, tilemap, 1, 1, 1, 0, 0, 4, 4, &m, 0)
+	for _, tc := range []struct {
+		x, y int
+		want Color
+	}{
+		{0, 0, ColRed}, {1, 1, ColRed}, {2, 0, ColBlue}, {3, 1, ColBlue}, {0, 2, ColBlue}, {2, 2, ColRed}, {3, 3, ColRed},
+	} {
+		if got := c.DrawGetPoint(tc.x, tc.y); got != tc.want {
+			t.Errorf("pixel %d,%d: %#04x, want %#04x", tc.x, tc.y, got, tc.want)
+		}
+	}
 }
 
 func TestDrawImg4Pal(t *testing.T) {
