@@ -26,7 +26,7 @@ import (
 	"github.com/sat0ken/tinygo-cyd/hal"
 )
 
-//go:generate go run ../tools/picoimg -pkg picopad -root $PICOLIBSDK -o font.go _font/font_bold_8x8.c
+//go:generate go run ../tools/picoimg -pkg picopad -root $PICOLIBSDK -o font.go _font/font_bold_8x8.c _font/font_bold_8x14.c _font/font_bold_8x16.c _font/font_cond_6x8.c _font/font_tiny_5x8.c
 
 // The PicoPad's screen size (WIDTH, HEIGHT).
 const (
@@ -106,8 +106,7 @@ type Console struct {
 	bufs [2][]byte // bandRows rows of big endian RGB565
 	next int       // the buffer to fill: the other may be going out
 
-	font         string
-	fontW, fontH int
+	font Font
 
 	keys
 	rand uint64
@@ -119,14 +118,12 @@ type Console struct {
 func New(d hal.Display, t hal.Touch, seed uint32) *Console {
 	w, h := d.Size()
 	c := &Console{
-		d:     d,
-		ox:    (w - Width) / 2,
-		oy:    (h - Height) / 2,
-		pix:   make([]uint8, Width*Height),
-		ncol:  1, // the frame buffer starts black: index 0
-		font:  fontBold8x8,
-		fontW: 8,
-		fontH: 8,
+		d:    d,
+		ox:   (w - Width) / 2,
+		oy:   (h - Height) / 2,
+		pix:  make([]uint8, Width*Height),
+		ncol: 1,            // the frame buffer starts black: index 0
+		font: FontBold8x16, // the default of PicoLibSDK
 	}
 	c.bd, _ = d.(bitmapDrawer)
 	c.ad, _ = d.(asyncDrawer)

@@ -94,27 +94,40 @@ func TestDrawImg4Pal(t *testing.T) {
 
 func TestDrawText(t *testing.T) {
 	c, d, _, _ := newTest(t, Width, Height)
-	c.DrawRect(0, 0, 40, 20, ColBlue)
+	if c.DrawFontWidth() != 8 || c.DrawFontHeight() != 16 {
+		t.Errorf("default font %dx%d, want 8x16 (FontBold8x16)", c.DrawFontWidth(), c.DrawFontHeight())
+	}
+	c.DrawRect(0, 0, 100, 60, ColBlue)
 	c.DrawText("A", 2, 3, ColYellow)
+	c.SelFont8x8()
 	c.DrawTextBg("AB", 10, 3, ColWhite, ColRed)
+	c.SelFont6x8()
+	c.DrawTextBg2("AB", 30, 3, ColWhite, ColRed) // 12 x 16 a character
+	c.DrawTextW("A", 60, 3, ColGreen)
+	c.DrawTextH("A", 80, 3, ColGreen)
 	c.DispUpdate()
-	checkGlyph(t, c, d, 'A', 2, 3, ColYellow, ColBlue)
-	checkGlyph(t, c, d, 'A', 10, 3, ColWhite, ColRed)
-	checkGlyph(t, c, d, 'B', 18, 3, ColWhite, ColRed)
+	checkGlyph(t, c, d, FontBold8x16, 'A', 2, 3, 1, 1, ColYellow, ColBlue)
+	checkGlyph(t, c, d, FontBold8x8, 'A', 10, 3, 1, 1, ColWhite, ColRed)
+	checkGlyph(t, c, d, FontBold8x8, 'B', 18, 3, 1, 1, ColWhite, ColRed)
+	checkGlyph(t, c, d, FontCond6x8, 'A', 30, 3, 2, 2, ColWhite, ColRed)
+	checkGlyph(t, c, d, FontCond6x8, 'B', 42, 3, 2, 2, ColWhite, ColRed)
+	checkGlyph(t, c, d, FontCond6x8, 'A', 60, 3, 2, 1, ColGreen, ColBlue)
+	checkGlyph(t, c, d, FontCond6x8, 'A', 80, 3, 1, 2, ColGreen, ColBlue)
 }
 
-// checkGlyph checks character ch of the font at x, y.
-func checkGlyph(t *testing.T, c *Console, d *memlcd.Display, ch byte, x, y int, fg, bg Color) {
+// checkGlyph checks character ch of font f at x, y, sx times as wide and
+// sy times as high.
+func checkGlyph(t *testing.T, c *Console, d *memlcd.Display, f Font, ch byte, x, y, sx, sy int, fg, bg Color) {
 	t.Helper()
-	for i := 0; i < 8; i++ {
-		bits := fontBold8x8[i*256+int(ch)]
-		for j := 0; j < 8; j++ {
+	for i := 0; i < f.h*sy; i++ {
+		bits := f.data[i/sy*256+int(ch)]
+		for j := 0; j < f.w*sx; j++ {
 			want := bg
-			if bits&(0x80>>j) != 0 {
+			if bits&(0x80>>(j/sx)) != 0 {
 				want = fg
 			}
 			if got := at(c, d, x+j, y+i); got != want {
-				t.Fatalf("%c: pixel %d, %d = %#04x, want %#04x", ch, j, i, got, want)
+				t.Fatalf("%c at %d, %d: pixel %d, %d = %#04x, want %#04x", ch, x, y, j, i, got, want)
 			}
 		}
 	}
@@ -344,6 +357,9 @@ func TestRand(t *testing.T) {
 		}
 		if r := c.RandS16Max(-300); r < -300 || r > 0 {
 			t.Fatalf("RandS16Max(-300) = %d", r)
+		}
+		if r := c.RandFloatMinMax(-2, 3); r < -2 || r >= 3 {
+			t.Fatalf("RandFloatMinMax(-2, 3) = %v", r)
 		}
 	}
 	for v, ok := range seen {

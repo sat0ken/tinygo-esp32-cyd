@@ -90,6 +90,7 @@ make wasm PKG=./cmd/games && make serve   # ブラウザ
 | 16_maze | 同じく PicoLibSDK の迷路（[games/maze](games/maze/maze.go)）。矢印で顔を動かして出口を探す。見えるのは通った道の周りだけ。A で出口が一瞬見える。出口に着くと迷路全体が見え、ボタンで次の迷路。Y でやめる。ジョイスティックがなければ 3×3 のタッチのボタン（[PicoPad のゲーム](#picopad-のゲーム)）。wasm でも動く | 顔が動く・壁で止まる、通った所が見えていく |
 | 17_fifteen | 同じく PicoLibSDK の 15 パズル（[games/fifteen](games/fifteen/fifteen.go)）。矢印でタイルを穴に動かして 1〜15 に並べる。A で混ぜ直し、X で自動で解く（ボタンで止まる）、Y でやめる。揃うと点滅し、ボタンで次のゲーム。ジョイスティックがなければ 3×3 のタッチのボタン（[PicoPad のゲーム](#picopad-のゲーム)）。wasm でも動く | タイルが動く、X で最後まで解ける |
 | 18_life | 同じく PicoLibSDK のライフゲーム（[games/life](games/life/life.go)）。50×50 の世界（端はつながる）の中央 20×15 を表示。矢印でカーソル、A でセルを反転、B で動かす（ボタンで止めると動かす前に戻る）、X で次のスロット（グライダー銃などの模様が入っている 10 個）、Y でやめる。ジョイスティックがなければ 3×3 のタッチのボタン（[PicoPad のゲーム](#picopad-のゲーム)）。wasm でも動く | セルが反転する、B で動く・止めると戻る |
+| 19_tvtennis | 同じく PicoLibSDK のテニス（[games/tvtennis](games/tvtennis/tvtennis.go)）。最初の画面で LEFT/RIGHT が片方のパドルで CPU と対戦、DOWN が2人、UP がデモ、A が両方のパドルを1人で。UP/DOWN が左のパドル、X/A が右のパドル、LEFT/RIGHT/B でサーブ、Y で最初の画面へ（そこで Y でやめる）。wasm でも動く | パドルが動く、ボールが跳ね返る・点が入る |
 
 02_colorbars はシリアルから1文字コマンドを受け付ける：
 `c` カラーバー、`r`/`g`/`b`/`w`/`k` 単色（赤/緑/青/白/黒）、`d` レジスタを再ダンプ。
@@ -247,13 +248,13 @@ cmd/games と 08〜14 は、起動時にモジュールを探し（`platform.Ini
 
 ## PicoPad のゲーム
 
-[PicoLibSDK](https://github.com/Panda381/PicoLibSDK) は PicoPad（RP2040、320×240 の液晶、十字キーと A・B・X・Y）の C の SDK で、ゲームのサンプルが付いている（`PicoPad/GAME/`。作者の自作分は Unlicense）。[picopad](picopad/picopad.go) パッケージは、そのゲームが使う SDK の関数を同じ名前・同じ引数で持つ。C のゲームを関数ごとに Go に書き換えれば、ゲームのループもそのまま動く。移植したのはテトリス（[games/tetris](games/tetris/tetris.go)、15_tetris）、迷路（[games/maze](games/maze/maze.go)、16_maze）、15 パズル（[games/fifteen](games/fifteen/fifteen.go)、17_fifteen）、ライフゲーム（[games/life](games/life/life.go)、18_life）。
+[PicoLibSDK](https://github.com/Panda381/PicoLibSDK) は PicoPad（RP2040、320×240 の液晶、十字キーと A・B・X・Y）の C の SDK で、ゲームのサンプルが付いている（`PicoPad/GAME/`。作者の自作分は Unlicense）。[picopad](picopad/picopad.go) パッケージは、そのゲームが使う SDK の関数を同じ名前・同じ引数で持つ。C のゲームを関数ごとに Go に書き換えれば、ゲームのループもそのまま動く。移植したゲームは [examples](#examples) の表の 15 以降（`games/<名前>`）。
 
 ```sh
 make flash-s028 PKG=./examples/15_tetris    # ESP32-2432S028R（画面がちょうど 320×240）
 make flash-s035 PKG=./examples/15_tetris    # ESP32-3248S035C（中央の 320×240）
 make wasm PKG=./examples/15_tetris && make serve
-make flash-s028 PKG=./examples/16_maze      # 迷路、15 パズル（17_fifteen）、ライフゲーム（18_life）も同じ
+make flash-s028 PKG=./examples/16_maze      # ほかのゲームも同じ（16_maze、17_fifteen …）
 ```
 
 | PicoPad | この基板 |
@@ -263,7 +264,7 @@ make flash-s028 PKG=./examples/16_maze      # 迷路、15 パズル（17_fifteen
 | （ボタンだけ） | タッチ：画面を 3×3 に分けて、上・左・右・下の真ん中が十字キー、中央と右下が A、左下が B、右上が X、左上が Y |
 
 - PicoPad のフレームバッファは 16bit（150KB）。ESP32（PSRAM なし）でこれを持つと、ヒープが約 37KB しか残らない（TinyGo 0.44 のビルドで確認）。そこで 8bit のパレット番号（75KB）で持ち、`DispUpdate` が変わった範囲を 8 行ずつ RGB565 に直して送る（ESP32 では DMA）。色には最初に描かれたときに番号を付け、256 色を超えたら一番近い色にする。テトリスは 80 色。
-- RAM：ESP32-2432S028R で起動直後のヒープ約 186KB のうち、フレームバッファ 75KB と送信用のバッファ 10KB を使う（15〜17。18_life はゲームの分の 30KB も使い、残りは約 60KB。ESP32-4827S043 では起動直後のヒープ約 130KB のうち約 127KB を使うので、残りは約 5KB しかない）。
+- RAM：ESP32-2432S028R で起動直後のヒープ約 186KB のうち、フレームバッファ 75KB と送信用のバッファ 10KB を使う（ほかにゲームが使う分。18_life はゲームの分の 30KB も使い、残りは約 60KB。ESP32-4827S043 では起動直後のヒープ約 130KB のうち約 127KB を使うので、残りは約 5KB しかない）。
 - 画像とフォントは、PicoLibSDK の C の配列（`img/*.cpp`、`_font/*.c`）を [tools/picoimg](tools/picoimg/main.go) で Go の文字列定数にしたもの（フラッシュに置かれる）。作り直すときは PicoLibSDK を取ってきて `PICOLIBSDK=~/PicoLibSDK go generate ./picopad ./games/...`。
 - 元のゲームの画面写真と比べた：テトリスはゴールデン画像（`tetris_start`）の動かない部分（壁・枠・題字・統計のブロック）が `TETRIS.PNG` と1ピクセルも違わない。迷路は `MAZE.PNG` の 8×8 のマス 1,131 個、15 パズルは `FIFTEEN.PNG` の 48×48 のマス 16 個、ライフゲームは `LIFE.PNG` の 16×16 のマス 300 個がどれも、こちらで描いたタイルのどれかと1ピクセルも違わない。
 - 音はまだない（C の `PLAYSOUND` はコメントにしてある）。`ResetToBootLoader`（PicoPad では SD カードのメニューに戻る）は `Run` から戻ること。cmd/games（ランチャー）にはまだ入れていない。
@@ -376,4 +377,4 @@ wasm 版やホストのテストで問題がなくても、次は実機で確認
 - フェーズ8：VSYNC は割り込みではなくポーリング（`WaitVSync`）。割り込み版は未実装。
 - フェーズ10：メモリ節約モード（8bit パレット + バウンスバッファ）は未実装。
 - タッチのキャリブレーション値は1台の実測値。個体差があるので、ずれる場合は 04_touch で測り直す。
-- PicoPad のゲーム：音、ランチャーへの追加、ほかのゲームの移植（docs/ARCHITECTURE.md 17章）。15〜18 は実機では未確認。
+- PicoPad のゲーム：音、ランチャーへの追加、ほかのゲームの移植（docs/ARCHITECTURE.md 17章）。15 以降は実機では未確認。

@@ -217,7 +217,9 @@ type Game struct {
 // New returns the game on d (at least 320x240) with the touch panel t;
 // seed starts the random bricks. Set Pad to use a game controller.
 func New(d hal.Display, t hal.Touch, seed uint32) *Game {
-	return &Game{Console: picopad.New(d, t, seed), levelBest: 1}
+	g := &Game{Console: picopad.New(d, t, seed), levelBest: 1}
+	g.SelFont8x8() // FONT in config.h
+	return g
 }
 
 // dispTile displays one tile of the board.

@@ -801,7 +801,7 @@ ESP32（PSRAM なし）、ILI9341（240×320、SPI）、XPT2046（抵抗膜タ�
 | 液晶 | ST7796、480×320 | ILI9341、320×240（`spilcd.InitILI9341`） |
 | タッチ | GT911（I2C） | XPT2046（S043 と同じ [xpttouch](../xpttouch/xpttouch.go)、ピンは CLK 25・MOSI 32・MISO 39・CS 33・IRQ 36） |
 | `platform.Init()` | 中央の 480×272 の窓 | 画面全体の 320×240 |
-| 動くプログラム | 03、07〜18、cmd/app、cmd/games | s028_check、08〜18、cmd/app、cmd/games |
+| 動くプログラム | 03、07 以降、cmd/app、cmd/games | s028_check、08 以降、cmd/app、cmd/games |
 
 - 480×272 の窓には入らないので、ゲームとお絵描きアプリは画面の大きさから配置を選ぶ。各ゲームの `layout` 構造体と `layoutFor(w, h)`（`NewGame` が `d.Size()` で呼ぶ）が、480×272 以上なら元の値（ゴールデン画像は変わらない）、それより小さければ 320×240 用の値を返す。テストは両方の大きさで動かし、`TestLayout` などが画面からはみ出さないこと・押せる所が重ならないこと・文字が収まることを確かめる（320×240 のゴールデン画像は `*_small_*`）。[app](../app/app.go) は 480×272 未満ならデモを省いて紙・パレット・CLEAR だけにする（`app_small`）。
 - 320×240 の配置：数独は1マス 25px、オセロは1マス 25px（右の欄に 105px 残して「THINKING...」を1行に）、ポーカーとソリティアはカードを小さく（56×72、42×54）、ランチャーのタイルは 104px 幅（SOLITAIRE が太字で 99px）。長いメッセージは単語で折り返すか小さい字にする。
@@ -814,13 +814,14 @@ ESP32（PSRAM なし）、ILI9341（240×320、SPI）、XPT2046（抵抗膜タ�
 
 ## 17. PicoPad のゲームの移植（picopad、15）
 
-PicoPad は RP2040 のゲーム機（320×240 の ST7789、十字キーと A・B・X・Y、PWM の音）。その C の SDK [PicoLibSDK](https://github.com/Panda381/PicoLibSDK) にはゲームのサンプルが付いている（`PicoPad/GAME/` の 19 本。作者の自作分は Unlicense。TINYGAME の 22 本は GPLv3 なのでこのリポジトリには入れない）。[picopad](../picopad/picopad.go) はそのゲームを Go に移すための SDK の代わりで、移植したのはテトリス（[games/tetris](../games/tetris/tetris.go)、[15_tetris](../examples/15_tetris/main.go)）、迷路（[games/maze](../games/maze/maze.go)、[16_maze](../examples/16_maze/main.go)）、15 パズル（[games/fifteen](../games/fifteen/fifteen.go)、[17_fifteen](../examples/17_fifteen/main.go)）、ライフゲーム（[games/life](../games/life/life.go)、[18_life](../examples/18_life/main.go)）。
+PicoPad は RP2040 のゲーム機（320×240 の ST7789、十字キーと A・B・X・Y、PWM の音）。その C の SDK [PicoLibSDK](https://github.com/Panda381/PicoLibSDK) にはゲームのサンプルが付いている（`PicoPad/GAME/` の 19 本。作者の自作分は Unlicense。TINYGAME の 22 本は GPLv3 なのでこのリポジトリには入れない）。[picopad](../picopad/picopad.go) はそのゲームを Go に移すための SDK の代わりで、移植したゲームは `games/<名前>` と `examples/<番号>_<名前>`（README の examples の表の 15 以降）。下にゲームごとの注意を書く。
 
 ### 方針
 
 - C のゲームは「自分のループで描いて `DispUpdate`、`WaitMs` で待って `KeyGet` でボタンを読む」作り。ほかのゲーム（`Update(dt)` を毎フレーム呼ばれる作り）に書き直すと C との対応が崩れるので、**ループはそのまま**にして、SDK の関数を同じ名前・同じ引数で `picopad.Console` のメソッドにした。C のグローバル変数はゲームの構造体のフィールド、関数はメソッドになる（`DispTile` → `dispTile`）。`Console` を埋め込むので、呼び出しは `g.DrawText(...)`・`g.KeyGet()` と C とほぼ同じ形。
 - 描画の関数は `lib_draw.c` の切り抜き（クリップ）を1行ずつ写した。色は RGB565 の `Color`（`COLOR(r,g,b)` は `picopad.RGB`、`COL_*` は `picopad.Col*`）。
 - 乱数は `lib_rand.c` と同じ 64bit の線形合同法。種は `New` の引数（PicoPad はリング発振器）。
+- フォントは PicoLibSDK と同じく、既定が `FontBold8x16`（`config_def.h` の `FONT`）。ゲームの `config.h` が `FONT` を変えていれば `New` でそれを選ぶ（テトリスは 8×8）。C の `pDrawFont = FontBold8x8` や `SelFont8x8()` は `SetFont`・`SelFont8x8`、`DrawFontWidth`・`DrawFontHeight` はメソッド。
 - `ResetToBootLoader`（PicoPad では SD カードのメニューに戻る）は `Run` から戻ること。音（`PLAYSOUND`）は今はコメント。
 
 ### フレームバッファ：8bit のパレット番号
@@ -891,19 +892,27 @@ PicoPad は 320×240×16bit（150KB）のフレームバッファに描き、`Di
 - C のクリップボード（`Clip`、2.5KB）は消すだけで使われていないので省いた。
 - RAM：ゲームの構造体が 30KB（世界・隣の数・スロット）。ESP32 では残りが約 60KB あるが、ESP32-4827S043 では起動直後のヒープ約 130KB のうち約 127KB を使い、残りは約 5KB しかない（実機では未確認）。S043 では RGB 液晶のフレームバッファに直接描けば 75KB 空く（5 章の 8bit のバッファを使わない）。
 
+### TV テニスの移植（19）
+
+- C の `main.cpp`（約 750 行）を関数ごとに写した。C の `Open()`（最初の画面）が `Run`、`Game()` が `game`。
+- ゲームのループは待たずに回り、毎回 `Time()` で前回からの時間を測ってパドルとボールを動かす（パドル 250 px/秒、ボール 300 px/秒）。ボタンは `KeyPressed` で毎回読む。テストの偽の時計は `Step` を 100µs にした。
+- `DISP_STRIP_NUM`・`DispSetStripNext` は VGA 版の PicoPad 用（帯に分けて描く）なので、1回で描く。
+- `cosf`・`sinf` は `math.Cos`・`math.Sin`（float64）を float32 に直して使う。
+
 ### テスト
 
 - [picopad_test.go](../picopad/picopad_test.go)：画像（8bit・4bit・透明色つき）と切り抜き、文字、256 色を超えたとき、`DrawClear` で番号が空くこと、dirty rect の送り方（帯ごと）、中央に置くこと、ボタン（繰り返し・離す・最初から押されている・タッチの 9 か所・眠らずに待つループ）、乱数。
 - [tetris_test.go](../games/tetris/tetris_test.go)：最初の画面のゴールデン画像（`tetris_start`。320×240 と、480×272 の中央の両方で同じ）、移動・回転・落下、デモ（ボタンを押さずに 120 秒：10 秒でデモになり、点と消した行が増える）、2 行消して次のレベル、ゲームオーバーで最高点が残ること、Y で `Run` から戻ること。画面の枠の中のブロックは、盤のタイルと 1 ピクセルずつ比べる（`checkField`）。
 - [maze_test.go](../games/maze/maze_test.go)：最初の画面（`maze_start`。顔とその周りだけ見える）、20 個の種で迷路の石が全部壁になり通路が全部つながること、最短の道をボタンで進んで出口に着き、迷路全体が見えて（`maze_solved`）ボタンで次の迷路になること、A で出口が見えて元に戻ること。
 - [fifteen_test.go](../games/fifteen/fifteen_test.go)：最初の画面（`fifteen_start`。混ぜた盤）、`shift` の差分の更新と `calcPos` が合うこと（20 通り × 200 手）、矢印でタイルが C のとおりに動くこと（端では動かない）、X で最後まで解けて（`fifteen_solved`。ゲームの時間で約 23 秒）ボタンで次のゲームになること。
+- [tvtennis_test.go](../games/tvtennis/tvtennis_test.go)：最初の画面（`tvtennis_title`）、2人で始めた画面（`tvtennis_game`）、パドルが端まで動いて描き直されること、サーブ、Y で最初の画面に戻ること、ボールがパドルで跳ね返る・外に出ると点が入る・上の端で跳ね返ること、デモで 120 秒のうちに点が入ること。
 - [life_test.go](../games/life/life_test.go)：最初の画面（`life_start`。スロット 1 のペンタデカスロンとカーソル）、`generation` をテストの中に素直に書いた規則（端はつながる）とランダムな世界で 30 世代比べる、グライダーが世界の角を越えて 200 世代で元に戻る、X でスロットが順に出て A で変えたセルが保存されている、B で動いて止めると元に戻る、カーソルが端から反対の端へ回る。
-- 元のゲームの画面写真（PicoLibSDK の `PicoPad/GAME/TETRIS/TETRIS.PNG`）と `tetris_start` を RGB565 で比べ、動かない部分（壁・枠・題字・統計のブロック）は全ピクセル同じだった。迷路の `MAZE.PNG`（途中まで進んだ迷路）は、左上 4 ピクセルずらした 8×8 のマス 1,131 個がどれも、こちらで描いたタイル 17 種のどれかと全ピクセル同じだった（4bit の画像の読み方と描く位置が同じ）。15 パズルの `FIFTEEN.PNG` も、48×48 のマス 16 個がどれもタイル 18 種のどれかと全ピクセル同じで、盤の外は黒。ライフゲームの `LIFE.PNG` は、16×16 のマス 300 個がどれもタイル 4 種のどれかと全ピクセル同じで、`life_start` と違うのはカーソルの 2 マスだけ（写真はカーソルを 1 つ右に動かしたあと）。
+- 元のゲームの画面写真（PicoLibSDK の `PicoPad/GAME/TETRIS/TETRIS.PNG`）と `tetris_start` を RGB565 で比べ、動かない部分（壁・枠・題字・統計のブロック）は全ピクセル同じだった。迷路の `MAZE.PNG`（途中まで進んだ迷路）は、左上 4 ピクセルずらした 8×8 のマス 1,131 個がどれも、こちらで描いたタイル 17 種のどれかと全ピクセル同じだった（4bit の画像の読み方と描く位置が同じ）。15 パズルの `FIFTEEN.PNG` も、48×48 のマス 16 個がどれもタイル 18 種のどれかと全ピクセル同じで、盤の外は黒。TV テニスの `TVTENNIS.PNG`（プレイ中）と `tvtennis_game` は、点数の数字とネットが全ピクセル同じ（違うのはパドルとボールの位置）。ライフゲームの `LIFE.PNG` は、16×16 のマス 300 個がどれもタイル 4 種のどれかと全ピクセル同じで、`life_start` と違うのはカーソルの 2 マスだけ（写真はカーソルを 1 つ右に動かしたあと）。
 - ブラウザ（`make wasm PKG=./examples/15_tetris`・`16_maze`・`17_fifteen`・`18_life`）は headless Chromium と Playwright で確かめた。テトリスは表示・A で開始・左右・回転・落下・B で一時停止、迷路は矢印で進む・壁で止まる・A で出口が見えて戻る、15 パズルは矢印でタイルが動く・X で最後まで解ける、ライフゲームはカーソル・反転・スロット・B で動いて止めると戻る。実機は未確認。
 
 ### ほかのゲームを移植するとき
 
 1. `PicoPad/GAME/<名前>/img/*.cpp` を tools/picoimg で `games/<名前>/` に変換する（音の `snd/*.cpp` は今は要らない）。
 2. `src/*.cpp` を関数ごとに Go のメソッドにする。グローバル変数は構造体のフィールド、表は `var` の配列か文字列。
-3. 足りない SDK の関数を picopad に足す。今あるのは `DrawPoint`・`DrawRect`・`DrawFrame(W)`・`DrawClear(Col)`・`DrawChar(Bg)`・`DrawText(Bg)`・`DrawImgPal`・`DrawImg4Pal`・`DrawBlitPal`・`DrawBlit4Pal`・`DispUpdate(All)`・`DispDirty*`・`Key*`・`Time`・`WaitMs`・`Rand*`（`RandU8`・`RandU16`・`RandU8Max`・`RandU16Max`・`RandS16Max`・`RandShift`）。よく使われていてまだないのは `DrawImgRle`・`DrawImg4Rle`・`DrawBlit1Shadow`・`DrawRectShadow`（影：色を暗くするので、暗くした色にも番号を付ける）、`DrawText2`・`DrawTextW`（2 倍の文字）、ほかのフォント、`FrameBuf` を読む関数（パレット番号で返せば、ゲームの比較はそのまま動く）、`Mat2D` の回転描画（GHOSTRAC）、音。
+3. 足りない SDK の関数を picopad に足す。今あるのは `DrawPoint`・`DrawRect`・`DrawFrame(W)`・`DrawClear(Col)`・`DrawChar(Bg)`・`DrawText(Bg)`・`DrawImgPal`・`DrawImg4Pal`・`DrawBlitPal`・`DrawBlit4Pal`・`DrawText(Bg)(H/W/2)`・`DrawChar(Bg)(H/W/2)`・`SelFont*`・`SetFont`・`DispUpdate(All)`・`DispDirty*`・`Key*`・`Time`・`WaitMs`・`Rand*`（`RandU8`・`RandU16`・`RandU8Max`・`RandU16Max`・`RandS16Max`・`RandFloat`・`RandFloatMax`・`RandFloatMinMax`・`RandShift`）。よく使われていてまだないのは `DrawImgRle`・`DrawImg4Rle`・`DrawBlit1Shadow`・`DrawRectShadow`（影：色を暗くするので、暗くした色にも番号を付ける）、`FrameBuf` を読む関数（パレット番号で返せば、ゲームの比較はそのまま動く）、`Mat2D` の回転描画（GHOSTRAC）、音。
 4. テストは偽の時計とボタンの台本（internal/picotest）で `Run` を動かし、`At` で画面と状態を確かめる。ゲームが眠らずに描き続けるなら `Clock.Step` を大きくする。

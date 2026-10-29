@@ -86,65 +86,6 @@ func (c *Console) DrawClearCol(col Color) { c.DrawRect(0, 0, Width, Height, col)
 // DrawClear fills the screen with black.
 func (c *Console) DrawClear() { c.DrawClearCol(ColBlack) }
 
-// drawChar draws character ch of the font with the indices fg and bg
-// (opaque: also the background).
-func (c *Console) drawChar(ch byte, x, y int, fg, bg uint8, opaque bool) {
-	fw, fh := c.fontW, c.fontH
-	if x+fw <= 0 || x >= Width || y+fh <= 0 || y >= Height {
-		return
-	}
-	c.DispDirtyRect(x, y, fw, fh) // clips
-	for i := 0; i < fh; i++ {
-		py := y + i
-		if py < 0 || py >= Height {
-			continue
-		}
-		bits := c.font[i*256+int(ch)] // the font is 256 characters wide, one byte each
-		for j := 0; j < fw; j++ {
-			px := x + j
-			on := bits&(0x80>>j) != 0
-			if px < 0 || px >= Width || !on && !opaque {
-				continue
-			}
-			if on {
-				c.pix[py*Width+px] = fg
-			} else {
-				c.pix[py*Width+px] = bg
-			}
-		}
-	}
-}
-
-// DrawChar draws a character (transparent background).
-func (c *Console) DrawChar(ch byte, x, y int, col Color) {
-	c.drawChar(ch, x, y, c.index(col), 0, false)
-}
-
-// DrawCharBg draws a character with its background.
-func (c *Console) DrawCharBg(ch byte, x, y int, col, bgcol Color) {
-	fg := c.index(col)
-	c.drawChar(ch, x, y, fg, c.index(bgcol), true)
-}
-
-// DrawText draws a text (transparent background).
-func (c *Console) DrawText(text string, x, y int, col Color) {
-	fg := c.index(col)
-	for i := 0; i < len(text); i++ {
-		c.drawChar(text[i], x, y, fg, 0, false)
-		x += c.fontW
-	}
-}
-
-// DrawTextBg draws a text with its background.
-func (c *Console) DrawTextBg(text string, x, y int, col, bgcol Color) {
-	fg := c.index(col)
-	bg := c.index(bgcol)
-	for i := 0; i < len(text); i++ {
-		c.drawChar(text[i], x, y, fg, bg, true)
-		x += c.fontW
-	}
-}
-
 // clipImg clips an image of source width ws drawn at xd, yd: it returns
 // the new coordinates and size, and ok = false if nothing is left. The
 // source is not clipped at its height (as in PicoLibSDK).
