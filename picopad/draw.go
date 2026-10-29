@@ -220,3 +220,78 @@ func (c *Console) DrawBlit4Pal(src string, pal Palette, xs, ys, xd, yd, w, h, ws
 		yd++
 	}
 }
+
+// rleImage decodes the RLE images of PicoLibSDK. A code c of bits bits
+// (8 or 4) of half or more (128 or 8) repeats the next pixel c-half+3
+// times; a smaller code is followed by c+1 pixels. The stream goes on
+// from one row to the next.
+type rleImage struct {
+	src  string
+	bits int // 8 or 4
+	pos  int // the next byte, or the next nibble
+	rle  int // pixels left of a repeated pixel
+	raw  int // pixels left of a raw run
+	pix  byte
+}
+
+// next returns the next code or pixel of the stream.
+func (r *rleImage) next() byte {
+	if r.bits == 8 {
+		b := r.src[r.pos]
+		r.pos++
+		return b
+	}
+	b := nibble(r.src, 0, r.pos)
+	r.pos++
+	return b
+}
+
+// pixel returns the next pixel (a palette entry).
+func (r *rleImage) pixel() byte {
+	if r.rle == 0 && r.raw == 0 {
+		half := byte(1) << (r.bits - 1)
+		if b := r.next(); b >= half {
+			r.rle = int(b-half) + 3
+			r.pix = r.next()
+		} else {
+			r.raw = int(b) + 1
+		}
+	}
+	if r.rle != 0 {
+		r.rle--
+		return r.pix
+	}
+	r.raw--
+	return r.next()
+}
+
+// drawRle draws a w x h RLE image at xd, yd. As in PicoLibSDK the rows
+// above the screen are decoded and skipped and the image is cut at the
+// bottom; the pixels left or right of the screen (which PicoLibSDK would
+// write out of its buffer) are skipped too.
+func (c *Console) drawRle(r *rleImage, pal Palette, xd, yd, w, h int) {
+	c.DispDirtyRect(xd, yd, w, h)
+	tab := c.table(pal)
+	if yd+h > Height {
+		h = Height - yd
+	}
+	for ; h > 0; h-- {
+		for i := 0; i < w; i++ {
+			p := tab[r.pixel()]
+			if x := xd + i; yd >= 0 && x >= 0 && x < Width {
+				c.pix[yd*Width+x] = p
+			}
+		}
+		yd++
+	}
+}
+
+// DrawImgRle draws an 8-bit paletted image compressed with RLE.
+func (c *Console) DrawImgRle(src string, pal Palette, xd, yd, w, h int) {
+	c.drawRle(&rleImage{src: src, bits: 8}, pal, xd, yd, w, h)
+}
+
+// DrawImg4Rle draws a 4-bit paletted image compressed with RLE.
+func (c *Console) DrawImg4Rle(src string, pal Palette, xd, yd, w, h int) {
+	c.drawRle(&rleImage{src: src, bits: 4}, pal, xd, yd, w, h)
+}

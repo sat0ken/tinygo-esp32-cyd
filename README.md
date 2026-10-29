@@ -93,6 +93,7 @@ make wasm PKG=./cmd/games && make serve   # ブラウザ
 | 19_tvtennis | 同じく PicoLibSDK のテニス（[games/tvtennis](games/tvtennis/tvtennis.go)）。最初の画面で LEFT/RIGHT が片方のパドルで CPU と対戦、DOWN が2人、UP がデモ、A が両方のパドルを1人で。UP/DOWN が左のパドル、X/A が右のパドル、LEFT/RIGHT/B でサーブ、Y で最初の画面へ（そこで Y でやめる）。wasm でも動く | パドルが動く、ボールが跳ね返る・点が入る |
 | 20_atoms | 同じく PicoLibSDK の原子の陣取り（[games/atoms](games/atoms/atoms.go)）。最大5人（人か CPU）が 10×10 の盤に順に原子を置き、隣の数だけたまると爆発して隣を取る。最初の画面で LEFT・UP・RIGHT・DOWN・B が各プレイヤーの種類、A で開始。矢印でカーソル、A で置く、Y で最初の画面へ（そこで Y でやめる）。全員 CPU ならデモ。wasm でも動く | 原子が置ける・爆発して隣を取る、CPU が打つ |
 | 21_chess | 同じく PicoLibSDK のチェス（[games/chess](games/chess/chess.go)）。最初の画面で LEFT が白で CPU と対戦、RIGHT が黒、DOWN が2人、UP がデモ、A が強さ（2〜5 手先まで読む）。矢印でカーソル、A で駒を持ち上げて置く、B で戻す、X で CPU に指させる、Y でやめる。C のとおりキャスリングの表示位置がずれ、ポーンは必ずクイーンになる。wasm でも動く | 駒が動かせる、CPU が指す |
+| 22_eggs | 同じく PicoLibSDK のリバーシ風のゲーム（[games/eggs](games/eggs/eggs.go)）。ひよこを置いて、ひよこで終わる列を返す（プレイヤー1はめんどり→ひよこ→卵、プレイヤー2は卵→ひよこ→めんどり）。最初の画面で LEFT が卵で CPU と対戦、RIGHT がめんどり、DOWN が2人、UP がデモ。矢印でカーソル、A で置く、X で CPU の手を見る、Y でやめる。wasm でも動く | 置ける所に印、列が返る、CPU が打つ |
 
 02_colorbars はシリアルから1文字コマンドを受け付ける：
 `c` カラーバー、`r`/`g`/`b`/`w`/`k` 単色（赤/緑/青/白/黒）、`d` レジスタを再ダンプ。

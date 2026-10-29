@@ -92,6 +92,38 @@ func TestDrawImg4Pal(t *testing.T) {
 	}
 }
 
+func TestDrawImgRle(t *testing.T) {
+	c, d, _, _ := newTest(t, Width, Height)
+	pal := palette(ColBlack, ColRed, ColGreen, ColBlue)
+	// 4 x 3 pixels: 1 1 1 1 / 1 2 3 0 / 2 2 2 3
+	// 8 bits: repeat 1 five times (128+2), raw 3 (2), repeat 2 three times
+	// (128+0), raw 1 (0)
+	img8 := "\x82\x01" + "\x02\x02\x03\x00" + "\x80\x02" + "\x00\x03"
+	want := []Color{ColRed, ColRed, ColRed, ColRed, ColRed, ColGreen, ColBlue, ColBlack, ColGreen, ColGreen, ColGreen, ColBlue}
+	c.DrawImgRle(img8, pal, 10, 10, 4, 3)
+	// 4 bits, the same: repeat 1 five times (8+2), raw 3 (2), repeat 2
+	// three times (8+0), raw 1 (0)
+	img4 := "\xa1" + "\x22\x30" + "\x82" + "\x03"
+	c.DrawImg4Rle(img4, pal, 20, 10, 4, 3)
+	// the rows above the screen are skipped
+	c.DrawImgRle(img8, pal, 30, -1, 4, 3)
+	c.DispUpdate()
+	for i, col := range want {
+		x, y := i%4, i/4
+		if got := at(c, d, 10+x, 10+y); got != col {
+			t.Errorf("DrawImgRle: pixel %d, %d = %#04x, want %#04x", x, y, got, col)
+		}
+		if got := at(c, d, 20+x, 10+y); got != col {
+			t.Errorf("DrawImg4Rle: pixel %d, %d = %#04x, want %#04x", x, y, got, col)
+		}
+		if y > 0 {
+			if got := at(c, d, 30+x, y-1); got != col {
+				t.Errorf("DrawImgRle at -1: pixel %d, %d = %#04x, want %#04x", x, y, got, col)
+			}
+		}
+	}
+}
+
 func TestDrawText(t *testing.T) {
 	c, d, _, _ := newTest(t, Width, Height)
 	if c.DrawFontWidth() != 8 || c.DrawFontHeight() != 16 {
