@@ -9,6 +9,7 @@ import (
 
 	"github.com/sat0ken/tinygo-cyd/games/cards"
 	"github.com/sat0ken/tinygo-cyd/hal"
+	"github.com/sat0ken/tinygo-cyd/pad"
 	"github.com/sat0ken/tinygo-cyd/romfont/freesans"
 	"github.com/sat0ken/tinygo-cyd/romfont/proggy"
 	"tinygo.org/x/tinyfont"
@@ -33,6 +34,16 @@ var (
 	payText    = color.RGBA{255, 230, 120, 255}
 	hintText   = color.RGBA{120, 230, 255, 255}
 	winColor   = color.RGBA{255, 220, 60, 255}
+	focusColor = color.RGBA{0, 220, 255, 255} // not yellow: held cards have a yellow edge
+)
+
+// What can be tapped (or have the controller's focus): the five cards,
+// then the buttons.
+const (
+	focusBet  = 5
+	focusMax  = 6
+	focusDeal = 7
+	focusBack = 8
 )
 
 type rect struct{ x, y, w, h int16 }
@@ -139,6 +150,13 @@ type Game struct {
 	// OnExit, if set, shows a "< GAMES" button; tapping it calls OnExit.
 	OnExit func()
 
+	// Pad, if set, is the game controller: the stick moves the focus
+	// between the cards and the buttons, A presses what has the focus
+	// (on a card: hold it), X is DEAL/DRAW.
+	Pad   hal.Pad
+	in    pad.Input
+	focus int // a card or focusBet...focusBack
+
 	rand    *cards.Rand
 	round   Round
 	faceUp  [5]bool
@@ -162,7 +180,7 @@ type Game struct {
 // NewGame creates a game; call Start to draw it.
 func NewGame(d hal.Display, t hal.Touch, newSeed func() uint32) *Game {
 	w, h := d.Size()
-	return &Game{d: d, t: t, l: layoutFor(w, h), NewSeed: newSeed, lastTap: -1, credits: startCr, bet: 1}
+	return &Game{d: d, t: t, l: layoutFor(w, h), NewSeed: newSeed, lastTap: -1, credits: startCr, bet: 1, focus: focusDeal}
 }
 
 // Start draws the whole screen, ready for the first deal.
@@ -177,9 +195,11 @@ func (g *Game) Start() {
 
 // ---- input ----
 
-// Update reads the touch panel and advances the clock by dt seconds.
+// Update reads the touch panel and the controller and advances the clock
+// by dt seconds.
 func (g *Game) Update(dt float32) {
 	g.clock += dt
+	g.updatePad(dt)
 	x, y, pressed := g.t.ReadTouch()
 	tap := pressed && !g.wasTouch && g.clock-g.lastTap >= tapGap
 	g.wasTouch = pressed
@@ -199,38 +219,106 @@ func (g *Game) Update(dt float32) {
 	}
 }
 
-func (g *Game) tapAt(x, y int16) {
-	l := &g.l
-	if g.OnExit != nil && l.back.r.has(x, y) {
-		g.OnExit()
-		return
+// target returns where target k (a card or focusBet...focusBack) is.
+func (g *Game) target(k int) rect {
+	switch k {
+	case focusBet:
+		return g.l.bet.r
+	case focusMax:
+		return g.l.max.r
+	case focusDeal:
+		return g.l.deal.r
+	case focusBack:
+		return g.l.back.r
 	}
-	switch g.phase {
-	case idle:
-		switch {
-		case l.bet.r.has(x, y):
-			g.bet = g.bet%MaxBet + 1
-			g.dirty = true
-		case l.max.r.has(x, y):
-			g.bet = MaxBet
-			g.deal()
-		case l.deal.r.has(x, y):
-			g.deal()
-		}
-	case holding:
-		if l.deal.r.has(x, y) {
-			g.draw()
+	return g.l.cardRect(k)
+}
+
+// targets is how many targets there are: "< GAMES" only with OnExit.
+func (g *Game) targets() int {
+	if g.OnExit != nil {
+		return focusBack + 1
+	}
+	return focusBack
+}
+
+func (g *Game) tapAt(x, y int16) {
+	for k := 0; k < g.targets(); k++ {
+		if g.target(k).has(x, y) {
+			g.press(k)
 			return
 		}
-		for i := range g.round.Held {
-			if l.cardRect(i).has(x, y) {
-				g.round.Held[i] = !g.round.Held[i]
-				g.dirty = true
-			}
+	}
+}
+
+// press presses target k. While cards are turning over, only "< GAMES"
+// works.
+func (g *Game) press(k int) {
+	switch {
+	case k == focusBack:
+		g.OnExit()
+	case g.phase == idle && k == focusBet:
+		g.bet = g.bet%MaxBet + 1
+		g.dirty = true
+	case g.phase == idle && k == focusMax:
+		g.bet = MaxBet
+		g.deal()
+	case g.phase == idle && k == focusDeal:
+		g.deal()
+	case g.phase == holding && k == focusDeal:
+		g.draw()
+	case g.phase == holding && k < 5:
+		g.round.Held[k] = !g.round.Held[k]
+		g.dirty = true
+	}
+}
+
+// updatePad handles the controller. After a deal the focus goes to the
+// first card, after the draw back to DEAL.
+func (g *Game) updatePad(dt float32) {
+	in := &g.in
+	used := in.Used
+	in.Update(g.Pad, dt)
+	if !in.Used {
+		return
+	}
+	if !used {
+		g.dirty = true // show the focus
+	}
+	if d := in.Direction(); d != 0 {
+		var boxes [focusBack + 1]pad.Box
+		for k := range boxes[:g.targets()] {
+			r := g.target(k)
+			boxes[k] = pad.Box{X: r.x, Y: r.y, W: r.w, H: r.h}
+		}
+		if f := pad.Move(boxes[:g.targets()], g.focus, d); f != g.focus {
+			g.focus = f
+			g.dirty = true
 		}
 	}
-	// While cards are turning over, taps are ignored.
+	k := -1
+	switch {
+	case in.Pressed(hal.PadX):
+		k = focusDeal
+	case in.Pressed(hal.PadA | hal.PadOK):
+		k = g.focus
+	}
+	if k < 0 {
+		return
+	}
+	before := g.phase
+	g.press(k)
+	switch {
+	case before == idle && g.phase == dealing:
+		g.focus = 0
+	case before == holding && g.phase != holding:
+		g.focus = focusDeal
+	}
+	g.dirty = true
 }
+
+// focused reports whether target k shows the controller's focus.
+func (g *Game) focused(k int) bool { return g.in.Used && g.focus == k }
 
 // deal takes the bet and deals five new cards face down; they turn over
 // one by one.
@@ -368,11 +456,18 @@ func (g *Game) drawCard(i int) {
 			key += "*"
 		}
 	}
+	focused := g.focused(i)
+	if focused {
+		key += "f"
+	}
 	g.region(r, tableColor, key, func() {
 		if up {
 			cards.DrawFace(g.d, c, r.x, r.y, r.w, r.h, held)
 		} else {
 			cards.DrawBack(g.d, r.x, r.y, r.w, r.h)
+		}
+		if focused {
+			pad.Frame(g.d, r.x, r.y, r.w, r.h, 2, focusColor)
 		}
 	})
 }
@@ -435,11 +530,12 @@ func (g *Game) drawButtons() {
 		name  string
 		on    bool // usable now
 		color color.RGBA
+		focus bool
 	}{
-		{l.bet, "BET ONE", g.phase == idle, btnColor},
-		{l.max, "MAX BET", g.phase == idle, btnColor},
-		{l.deal, deal, g.phase == idle || g.phase == holding, dealColor},
-		{l.back, "< GAMES", true, btnColor},
+		{l.bet, "BET ONE", g.phase == idle, btnColor, g.focused(focusBet)},
+		{l.max, "MAX BET", g.phase == idle, btnColor, g.focused(focusMax)},
+		{l.deal, deal, g.phase == idle || g.phase == holding, dealColor, g.focused(focusDeal)},
+		{l.back, "< GAMES", true, btnColor, g.focused(focusBack)},
 	}
 	if g.OnExit == nil {
 		buttons = buttons[:3]
@@ -449,6 +545,9 @@ func (g *Game) drawButtons() {
 		if b.on {
 			key += "+"
 		}
+		if b.focus {
+			key += "f"
+		}
 		g.region(b.r, barColor, key, func() {
 			c, tc := b.color, textColor
 			if !b.on {
@@ -456,6 +555,9 @@ func (g *Game) drawButtons() {
 			}
 			g.d.FillRectangle(b.r.x, b.r.y, b.r.w, b.r.h, c)
 			g.centered(b.r, b.font, b.name, tc, b.base)
+			if b.focus {
+				pad.Frame(g.d, b.r.x, b.r.y, b.r.w, b.r.h, 2, focusColor)
+			}
 		})
 	}
 

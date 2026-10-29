@@ -1,12 +1,15 @@
 package poker
 
 import (
+	"image/color"
 	"testing"
 
 	"github.com/sat0ken/tinygo-cyd/board"
 	"github.com/sat0ken/tinygo-cyd/games/cards"
+	"github.com/sat0ken/tinygo-cyd/hal"
 	"github.com/sat0ken/tinygo-cyd/internal/goldentest"
 	"github.com/sat0ken/tinygo-cyd/memlcd"
+	"github.com/sat0ken/tinygo-cyd/pad"
 	"github.com/sat0ken/tinygo-cyd/romfont/proggy"
 	"tinygo.org/x/tinyfont"
 )
@@ -251,4 +254,61 @@ func TestTextsFit(t *testing.T) {
 			}
 		}
 	}
+}
+
+// press presses b on the controller for one frame and lets go.
+func press(g *Game, f *pad.Fake, b hal.Buttons) {
+	f.B = b
+	g.Update(dt)
+	f.B = 0
+	g.Update(dt)
+}
+
+// TestPad plays a hand with the controller only: DEAL, hold the first two
+// cards, DRAW with X, then "< GAMES".
+func TestPad(t *testing.T) {
+	for _, s := range sizes {
+		g, d, _ := newTestGameSize(s.w, s.h)
+		left := false
+		g.OnExit = func() { left = true }
+		g.Start()
+		f := &pad.Fake{}
+		g.Pad = f
+		g.Update(dt)
+		press(g, f, hal.PadA) // DEAL has the focus
+		if g.phase != dealing || g.credits != startCr-1 || g.focus != 0 {
+			t.Fatalf("%dx%d: phase %d credits %d focus %d", s.w, s.h, g.phase, g.credits, g.focus)
+		}
+		settle(g)
+		press(g, f, hal.PadA)
+		press(g, f, hal.PadRight)
+		press(g, f, hal.PadA)
+		if g.round.Held != [5]bool{true, true} {
+			t.Fatalf("%dx%d: held %v", s.w, s.h, g.round.Held)
+		}
+		r := g.l.cardRect(1)
+		if d.Pixel(r.x, r.y) != rgb565(focusColor) {
+			t.Fatalf("%dx%d: no focus on the second card", s.w, s.h)
+		}
+		kept := g.round.Hand
+		press(g, f, hal.PadX) // DRAW
+		settle(g)
+		if g.phase != idle || g.round.Hand[0] != kept[0] || g.round.Hand[1] != kept[1] || g.focus != focusDeal {
+			t.Fatalf("%dx%d: phase %d focus %d after the draw", s.w, s.h, g.phase, g.focus)
+		}
+		for n := 0; g.focus != focusBack; n++ {
+			if n > 4 {
+				t.Fatalf("%dx%d: < GAMES not reached (focus %d)", s.w, s.h, g.focus)
+			}
+			press(g, f, hal.PadLeft)
+		}
+		press(g, f, hal.PadA)
+		if !left {
+			t.Fatalf("%dx%d: < GAMES did not call OnExit", s.w, s.h)
+		}
+	}
+}
+
+func rgb565(c color.RGBA) uint16 {
+	return uint16(c.R&0xF8)<<8 | uint16(c.G&0xFC)<<3 | uint16(c.B)>>3
 }

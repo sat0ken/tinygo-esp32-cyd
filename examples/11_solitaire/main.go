@@ -37,6 +37,7 @@ func main() {
 		n++
 		return uint32(time.Now().UnixNano()) ^ n*0x9E3779B9
 	})
+	g.Pad = platform.InitPad() // the mini joystick module, if it is connected
 	g.Start()
 	println("11_solitaire: started")
 

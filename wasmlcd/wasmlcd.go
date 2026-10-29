@@ -1,7 +1,8 @@
 //go:build js && wasm
 
-// Package wasmlcd shows the RGB565 frame buffer on an HTML canvas and turns
-// pointer events on the canvas into touches.
+// Package wasmlcd shows the RGB565 frame buffer on an HTML canvas, turns
+// pointer events on the canvas into touches and the keyboard into a game
+// controller.
 //
 // Like the real panel, which is refreshed continuously by DMA, the canvas is
 // updated on every requestAnimationFrame. Frames where nothing was drawn are
@@ -15,10 +16,12 @@ import (
 	"syscall/js"
 
 	"github.com/sat0ken/tinygo-cyd/framebuf"
+	"github.com/sat0ken/tinygo-cyd/hal"
 	"tinygo.org/x/drivers/pixel"
 )
 
-// Display is a hal.Display and hal.Touch backed by a <canvas>.
+// Display is a hal.Display, hal.Touch and hal.Pad backed by a <canvas>
+// and the keyboard.
 type Display struct {
 	*framebuf.Buffer
 
@@ -31,6 +34,7 @@ type Display struct {
 
 	touchX, touchY int16
 	pressed        bool
+	keys           hal.Buttons
 
 	rafID   js.Value
 	onRAF   js.Func
@@ -39,6 +43,13 @@ type Display struct {
 	onDown  js.Func
 	onMove  js.Func
 	onUp    js.Func
+	onKey   js.Func
+}
+
+// padKeys are the keys of the game controller.
+var padKeys = map[string]hal.Buttons{
+	"ArrowUp": hal.PadUp, "ArrowDown": hal.PadDown, "ArrowLeft": hal.PadLeft, "ArrowRight": hal.PadRight,
+	"z": hal.PadA, "x": hal.PadB, "a": hal.PadX, "s": hal.PadY, "Enter": hal.PadOK,
 }
 
 // New attaches to the canvas with the given element id and starts updating it.
@@ -84,6 +95,20 @@ func New(canvasID string, w, h int16) (*Display, error) {
 		d.pressed = false
 		return nil
 	})
+	d.onKey = js.FuncOf(func(this js.Value, args []js.Value) any {
+		ev := args[0]
+		b, ok := padKeys[ev.Get("key").String()]
+		if !ok {
+			return nil
+		}
+		if ev.Get("type").String() == "keydown" {
+			d.keys |= b
+		} else {
+			d.keys &^= b
+		}
+		ev.Call("preventDefault") // the arrow keys would scroll the page
+		return nil
+	})
 	// window.wasmlcdFlush_<id>() copies the frame buffer to the canvas right
 	// away. The headless check (make test-browser) calls it before reading
 	// the canvas, because headless Chromium with virtual time does not run
@@ -98,6 +123,8 @@ func New(canvasID string, w, h int16) (*Display, error) {
 	canvas.Call("addEventListener", "pointermove", d.onMove)
 	canvas.Call("addEventListener", "pointerup", d.onUp)
 	canvas.Call("addEventListener", "pointercancel", d.onUp)
+	doc.Call("addEventListener", "keydown", d.onKey)
+	doc.Call("addEventListener", "keyup", d.onKey)
 	d.rafID = js.Global().Call("requestAnimationFrame", d.onRAF)
 	return d, nil
 }
@@ -109,12 +136,16 @@ func (d *Display) Close() {
 	d.canvas.Call("removeEventListener", "pointermove", d.onMove)
 	d.canvas.Call("removeEventListener", "pointerup", d.onUp)
 	d.canvas.Call("removeEventListener", "pointercancel", d.onUp)
+	doc := js.Global().Get("document")
+	doc.Call("removeEventListener", "keydown", d.onKey)
+	doc.Call("removeEventListener", "keyup", d.onKey)
 	js.Global().Delete(d.flushFn)
 	d.onRAF.Release()
 	d.onFlush.Release()
 	d.onDown.Release()
 	d.onMove.Release()
 	d.onUp.Release()
+	d.onKey.Release()
 }
 
 // pointer converts the event position to frame buffer coordinates. The
@@ -164,6 +195,9 @@ func (d *Display) flush() {
 func (d *Display) ReadTouch() (x, y int16, pressed bool) {
 	return d.touchX, d.touchY, d.pressed
 }
+
+// ReadPad implements hal.Pad with the keys held down.
+func (d *Display) ReadPad() hal.Buttons { return d.keys }
 
 // Display marks the buffer for the next animation frame.
 func (d *Display) Display() error {

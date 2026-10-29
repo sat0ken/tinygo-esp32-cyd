@@ -5,8 +5,10 @@ import (
 
 	"github.com/sat0ken/tinygo-cyd/board"
 	"github.com/sat0ken/tinygo-cyd/games/cards"
+	"github.com/sat0ken/tinygo-cyd/hal"
 	"github.com/sat0ken/tinygo-cyd/internal/goldentest"
 	"github.com/sat0ken/tinygo-cyd/memlcd"
+	"github.com/sat0ken/tinygo-cyd/pad"
 	"github.com/sat0ken/tinygo-cyd/romfont/proggy"
 	"tinygo.org/x/tinyfont"
 )
@@ -248,4 +250,84 @@ func TestBackButton(t *testing.T) {
 func rgb(c interface{ RGBA() (r, g, b, a uint32) }) uint16 {
 	r, gg, b, _ := c.RGBA()
 	return uint16(r>>8&0xF8)<<8 | uint16(gg>>8&0xFC)<<3 | uint16(b>>8)>>3
+}
+
+// press presses b on the controller for one frame and lets go.
+func press(g *Game, f *pad.Fake, b hal.Buttons) {
+	f.B = b
+	g.Update(dt)
+	f.B = 0
+	g.Update(dt)
+}
+
+// TestPad plays with the controller only: Y turns over the stock, the
+// stick goes down to the columns and right to the fourth, A moves the ace
+// on it home, X takes it back, and up from the stock reaches NEW.
+func TestPad(t *testing.T) {
+	for _, s := range sizes {
+		g, d, _ := newTestGameSize(s.w, s.h)
+		// Put an ace on top of the fourth column (swapped with a card of
+		// the stock, so it is still one deck).
+		col := &g.s.Tableau[3]
+		top := len(col.Cards) - 1
+		for i, c := range g.s.Stock {
+			if c.Rank() == 1 {
+				g.s.Stock[i], col.Cards[top] = col.Cards[top], c
+				break
+			}
+		}
+		ace := col.Cards[top]
+		g.dirty = true
+		f := &pad.Fake{}
+		g.Pad = f
+		g.Update(dt)
+
+		press(g, f, hal.PadY)
+		if len(g.s.Waste) != 1 {
+			t.Fatalf("%dx%d: Y did not turn over the stock", s.w, s.h)
+		}
+		press(g, f, hal.PadDown)
+		if g.focus != (target{kind: columnTarget, pile: 0, index: 0}) {
+			t.Fatalf("%dx%d: down from the stock: %+v", s.w, s.h, g.focus)
+		}
+		r := g.focusRect(g.focus)
+		if d.Pixel(r.x, r.y) != rgb(focusColor) {
+			t.Fatalf("%dx%d: no frame on the first column", s.w, s.h)
+		}
+		for i := 0; i < 3; i++ {
+			press(g, f, hal.PadRight)
+		}
+		if g.focus.kind != columnTarget || g.focus.pile != 3 || g.focus.index != top {
+			t.Fatalf("%dx%d: focus %+v, want the top of the fourth column", s.w, s.h, g.focus)
+		}
+		press(g, f, hal.PadA)
+		home := 0
+		for _, p := range g.s.Foundation {
+			home += len(p)
+		}
+		if home != 1 || len(col.Cards) != top {
+			t.Fatalf("%dx%d: the ace did not go home", s.w, s.h)
+		}
+		if g.focus.index != top-1 {
+			t.Fatalf("%dx%d: the focus did not stay on the column: %+v", s.w, s.h, g.focus)
+		}
+		press(g, f, hal.PadX)
+		if len(col.Cards) != top+1 || col.Cards[top] != ace {
+			t.Fatalf("%dx%d: X did not take the ace back", s.w, s.h)
+		}
+
+		for n := 0; g.focus.kind != buttonTarget; n++ {
+			if n > 4 {
+				t.Fatalf("%dx%d: up does not reach the bar", s.w, s.h)
+			}
+			press(g, f, hal.PadUp)
+		}
+		for g.focus.pile != 1 {
+			press(g, f, hal.PadLeft)
+		}
+		press(g, f, hal.PadA) // NEW
+		if g.s.Moves != 0 || len(g.history) != 0 {
+			t.Fatalf("%dx%d: NEW did not deal again", s.w, s.h)
+		}
+	}
 }

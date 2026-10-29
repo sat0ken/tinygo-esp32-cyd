@@ -13,5 +13,8 @@ func Init() (hal.Display, hal.Touch, error) {
 	return memlcd.New(board.Width, board.Height), hal.NoTouch{}, nil
 }
 
+// InitPad returns nil: no game controller on the host.
+func InitPad() hal.Pad { return nil }
+
 // SetBacklight does nothing on the host.
 func SetBacklight(percent int) {}

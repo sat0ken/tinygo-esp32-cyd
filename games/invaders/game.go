@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/sat0ken/tinygo-cyd/hal"
+	"github.com/sat0ken/tinygo-cyd/pad"
 	"github.com/sat0ken/tinygo-cyd/romfont/proggy"
 	"tinygo.org/x/tinyfont"
 )
@@ -66,6 +67,7 @@ type layout struct {
 	shotH          int16
 
 	bulletSpeed, bombSpeed, ufoSpeed float32 // pixels per second
+	cannonSpeed                      float32 // moved with the stick
 
 	msg rect // the line for "TAP TO START" and the like
 }
@@ -78,7 +80,7 @@ func layoutFor(w, h int16) layout {
 			num: 2, den: 1, hudH: 20, hudBase: 14, hudSep: "   ",
 			cellW: 32, cellH: 24, invW: 24, invH: 16, formX0: 64, formY0: 44,
 			stepX: 4, dropY: 8, edge: 4, ufoY: 24, bunkerY: 190, bunkerCell: 4, shotH: 8,
-			bulletSpeed: 360, bombSpeed: 120, ufoSpeed: 70,
+			bulletSpeed: 360, bombSpeed: 120, ufoSpeed: 70, cannonSpeed: 220,
 			msg: rect{80, 164, w - 160, 20},
 		}
 	}
@@ -88,7 +90,7 @@ func layoutFor(w, h int16) layout {
 		num: 3, den: 2, hudH: 18, hudBase: 13, hudSep: " ",
 		cellW: 22, cellH: 18, invW: 18, invH: 12, formX0: 40, formY0: 36,
 		stepX: 3, dropY: 6, edge: 3, ufoY: 21, bunkerY: 172, bunkerCell: 3, shotH: 6,
-		bulletSpeed: 270, bombSpeed: 90, ufoSpeed: 52,
+		bulletSpeed: 270, bombSpeed: 90, ufoSpeed: 52, cannonSpeed: 165,
 		msg: rect{10, 148, w - 20, 20},
 	}
 }
@@ -183,6 +185,13 @@ type Game struct {
 	// OnExit, if set, shows a "< GAMES" button on the title and game over
 	// screens; tapping it calls OnExit (used by the cmd/games launcher).
 	OnExit func()
+
+	// Pad, if set, is the game controller: the stick moves the cannon, A
+	// fires while held and starts the game, B on the title and game over
+	// screens is "< GAMES".
+	Pad     hal.Pad
+	in      pad.Input
+	cannonF float32 // the cannon's x while the stick moves it
 
 	state  state
 	stateT float32 // clock when the state was entered
@@ -441,12 +450,18 @@ func (g *Game) DrawAll() {
 // redraws what changed.
 func (g *Game) Update(dt float32) {
 	g.now += dt
+	g.in.Update(g.Pad, dt)
 	x, y, pressed := g.t.ReadTouch()
 	tap := pressed && !g.wasTouch
 	g.wasTouch = pressed
-	if tap && g.showBack() && g.backRect().has(x, y) {
+	if (tap && g.showBack() && g.backRect().has(x, y)) || (g.showBack() && g.in.Pressed(hal.PadB)) {
 		g.OnExit()
 		return
+	}
+	start := tap || g.in.Pressed(hal.PadA|hal.PadOK)
+	fire := pressed || g.in.Held(hal.PadA)
+	if g.state == ready || g.state == playing {
+		g.stick(dt)
 	}
 
 	if pressed && (g.state == ready || g.state == playing) {
@@ -463,11 +478,11 @@ func (g *Game) Update(dt float32) {
 
 	switch g.state {
 	case ready:
-		if tap {
+		if start {
 			g.setState(playing)
 		}
 	case playing:
-		if pressed && !g.bullet.active {
+		if fire && !g.bullet.active {
 			g.fire()
 		}
 		g.moveBullet(dt)
@@ -497,7 +512,7 @@ func (g *Game) Update(dt float32) {
 			g.DrawAll()
 		}
 	case gameOver:
-		if tap {
+		if start {
 			g.reset()
 			g.DrawAll()
 		}
@@ -508,6 +523,28 @@ func (g *Game) Update(dt float32) {
 	}
 	g.drawDynamic()
 	g.d.Display()
+}
+
+// stick moves the cannon while the stick is pushed left or right.
+func (g *Game) stick(dt float32) {
+	var dir float32
+	switch {
+	case g.in.Held(hal.PadLeft):
+		dir = -1
+	case g.in.Held(hal.PadRight):
+		dir = 1
+	default:
+		g.cannonF = float32(g.cannonX) // touch may move it meanwhile
+		return
+	}
+	g.cannonF += dir * g.l.cannonSpeed * dt
+	if g.cannonF < 0 {
+		g.cannonF = 0
+	}
+	if max := float32(g.w - g.l.pw(&cannonSprite)); g.cannonF > max {
+		g.cannonF = max
+	}
+	g.cannonX = int16(g.cannonF)
 }
 
 func (g *Game) fire() {
@@ -778,7 +815,7 @@ func (g *Game) drawDynamic() {
 		g.hudDirty = false
 		l := &g.l
 		g.d.FillRectangle(0, 0, g.w, l.hudH, hudColor)
-		text := "SCORE " + pad(g.score) + l.hudSep + "HI " + pad(g.hi) +
+		text := "SCORE " + fiveDigits(g.score) + l.hudSep + "HI " + fiveDigits(g.hi) +
 			l.hudSep + "LIVES " + strconv.Itoa(g.lives) + l.hudSep + "WAVE " + strconv.Itoa(g.wave)
 		tinyfont.WriteLine(g.d, &proggy.TinySZ8pt7b, 8, l.hudBase, text, textColor)
 		if g.showBack() {
@@ -790,7 +827,7 @@ func (g *Game) drawDynamic() {
 	g.drawMessage()
 }
 
-func pad(n int) string {
+func fiveDigits(n int) string {
 	s := strconv.Itoa(n)
 	for len(s) < 5 {
 		s = "0" + s
@@ -860,12 +897,16 @@ func (g *Game) drawUFO() {
 
 func (g *Game) drawMessage() {
 	var msg string
-	switch g.state {
-	case ready:
+	switch {
+	case g.state == ready && g.in.Used:
+		msg = "PRESS A TO START - STICK TO MOVE, A TO FIRE"
+	case g.state == ready:
 		msg = "TAP TO START - SLIDE TO MOVE, HOLD TO FIRE"
-	case cleared:
+	case g.state == cleared:
 		msg = "WAVE " + strconv.Itoa(g.wave) + " CLEAR"
-	case gameOver:
+	case g.state == gameOver && g.in.Used:
+		msg = "GAME OVER - PRESS A TO PLAY AGAIN"
+	case g.state == gameOver:
 		msg = "GAME OVER - TAP TO PLAY AGAIN"
 	}
 	if msg == g.msgShown {

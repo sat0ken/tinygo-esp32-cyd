@@ -5,8 +5,10 @@ import (
 	"testing"
 
 	"github.com/sat0ken/tinygo-cyd/board"
+	"github.com/sat0ken/tinygo-cyd/hal"
 	"github.com/sat0ken/tinygo-cyd/internal/goldentest"
 	"github.com/sat0ken/tinygo-cyd/memlcd"
+	"github.com/sat0ken/tinygo-cyd/pad"
 	"tinygo.org/x/tinyfont"
 )
 
@@ -148,4 +150,80 @@ func TestTilesFit(t *testing.T) {
 			t.Errorf("%dx%d: tiles end at %d,%d", s.w, s.h, last.x+last.w, last.y+last.h)
 		}
 	}
+}
+
+// press presses b on the controller for a few frames and lets go.
+func press(l *Launcher, f *pad.Fake, b hal.Buttons) {
+	f.B = b
+	for i := 0; i < 3; i++ {
+		l.Update(dt)
+	}
+	f.B = 0
+	for i := 0; i < 3; i++ {
+		l.Update(dt)
+	}
+}
+
+// TestPad starts every game with the controller and comes back with B (or
+// with A on "< GAMES" in the games that have it in their bar). A held down
+// from the launcher must not press anything in the game.
+func TestPad(t *testing.T) {
+	for _, s := range sizes {
+		l, d, _ := newTestLauncher(s.w, s.h)
+		f := &pad.Fake{}
+		l.Pad = f
+		l.Update(dt)
+		press(l, f, hal.PadLeft) // nothing to the left: only shows the focus
+		for k, e := range entries {
+			// Walk to tile k: the first row, then the second.
+			for n := 0; l.focus != k; n++ {
+				if n > 6 {
+					t.Fatalf("%dx%d: tile %d not reached (focus %d)", s.w, s.h, k, l.focus)
+				}
+				switch {
+				case k/3 > l.focus/3:
+					press(l, f, hal.PadDown)
+				case k/3 < l.focus/3:
+					press(l, f, hal.PadUp)
+				case k%3 > l.focus%3:
+					press(l, f, hal.PadRight)
+				default:
+					press(l, f, hal.PadLeft)
+				}
+			}
+			r := l.l.tileRect(k)
+			if d.Pixel(r.x, r.y) != rgb(focusColor) {
+				t.Fatalf("%dx%d: no frame on tile %d", s.w, s.h, k)
+			}
+			press(l, f, hal.PadA)
+			if l.Playing() != e.name {
+				t.Fatalf("%dx%d: tile %d started %q", s.w, s.h, k, l.Playing())
+			}
+			switch e.name {
+			case "SOLITAIRE", "POKER":
+				// "< GAMES" is in the bar: walk there and press A.
+				for n := 0; l.Playing() != "" && n < 12; n++ {
+					if n%6 == 5 {
+						press(l, f, hal.PadA)
+						continue
+					}
+					if e.name == "SOLITAIRE" {
+						press(l, f, []hal.Buttons{hal.PadUp, hal.PadUp, hal.PadLeft, hal.PadLeft, hal.PadLeft}[n%6])
+					} else {
+						press(l, f, hal.PadLeft)
+					}
+				}
+			default:
+				press(l, f, hal.PadB)
+			}
+			if l.Playing() != "" {
+				t.Fatalf("%dx%d: %s: not back on the launcher", s.w, s.h, e.name)
+			}
+		}
+	}
+}
+
+func rgb(c interface{ RGBA() (r, g, b, a uint32) }) uint16 {
+	r, gg, b, _ := c.RGBA()
+	return uint16(r>>8&0xF8)<<8 | uint16(gg>>8&0xFC)<<3 | uint16(b>>8)>>3
 }

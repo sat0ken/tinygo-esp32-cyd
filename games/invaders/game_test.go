@@ -4,8 +4,10 @@ import (
 	"testing"
 
 	"github.com/sat0ken/tinygo-cyd/board"
+	"github.com/sat0ken/tinygo-cyd/hal"
 	"github.com/sat0ken/tinygo-cyd/internal/goldentest"
 	"github.com/sat0ken/tinygo-cyd/memlcd"
+	"github.com/sat0ken/tinygo-cyd/pad"
 	"github.com/sat0ken/tinygo-cyd/romfont/proggy"
 	"tinygo.org/x/tinyfont"
 )
@@ -160,7 +162,7 @@ func TestLayout(t *testing.T) {
 			t.Errorf("%dx%d: bunkers off the screen", s.w, s.h)
 		}
 		g.score, g.hi, g.lives, g.wave = 99999, 99999, 3, 99
-		hud := "SCORE " + pad(g.score) + l.hudSep + "HI " + pad(g.hi) + l.hudSep + "LIVES 3" + l.hudSep + "WAVE 99"
+		hud := "SCORE " + fiveDigits(g.score) + l.hudSep + "HI " + fiveDigits(g.hi) + l.hudSep + "LIVES 3" + l.hudSep + "WAVE 99"
 		if _, w := tinyfont.LineWidth(&proggy.TinySZ8pt7b, hud); 8+int16(w) > g.backRect().x-4 {
 			t.Errorf("%dx%d: the HUD (%d pixels) runs into the back button", s.w, s.h, w)
 		}
@@ -296,4 +298,56 @@ func TestWaveClear(t *testing.T) {
 		t.Fatalf("wave 2 starts at y %d, want %d", g.inv[0][0].y, want)
 	}
 	checkScreen(t, g, d)
+}
+
+// TestPad plays with the controller only: A starts, the stick moves the
+// cannon, A held fires, B on the game over screen is "< GAMES".
+func TestPad(t *testing.T) {
+	for _, s := range sizes {
+		g, _, _ := newTestGameSize(s.w, s.h)
+		left := false
+		g.OnExit = func() { left = true }
+		g.DrawAll()
+		f := &pad.Fake{}
+		g.Pad = f
+		g.Update(dt)
+		f.B = hal.PadRight
+		g.Update(dt)
+		if g.msgShown != "PRESS A TO START - STICK TO MOVE, A TO FIRE" {
+			t.Fatalf("%dx%d: message %q", s.w, s.h, g.msgShown)
+		}
+		f.B = hal.PadA
+		g.Update(dt)
+		if g.state != playing {
+			t.Fatalf("%dx%d: A did not start the game", s.w, s.h)
+		}
+		g.Update(dt) // still held: fires
+		if !g.bullet.active {
+			t.Fatalf("%dx%d: A did not fire", s.w, s.h)
+		}
+		x0 := g.cannonX
+		f.B = hal.PadRight
+		for i := 0; i < 30; i++ {
+			g.Update(dt)
+		}
+		if moved := float32(g.cannonX - x0); moved < g.l.cannonSpeed/2-2 || moved > g.l.cannonSpeed/2+2 {
+			t.Fatalf("%dx%d: the cannon moved %v in half a second", s.w, s.h, moved)
+		}
+		f.B = hal.PadLeft
+		for i := 0; i < 600; i++ {
+			g.Update(dt)
+		}
+		if g.cannonX != 0 && g.state == playing {
+			t.Fatalf("%dx%d: the cannon stopped at %d, not at the edge", s.w, s.h, g.cannonX)
+		}
+		g.lives = 0
+		g.setState(gameOver)
+		f.B = 0
+		g.Update(dt)
+		f.B = hal.PadB
+		g.Update(dt)
+		if !left {
+			t.Fatalf("%dx%d: B on game over did not call OnExit", s.w, s.h)
+		}
+	}
 }

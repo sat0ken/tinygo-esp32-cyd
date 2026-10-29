@@ -26,3 +26,26 @@ type Touch interface {
 type NoTouch struct{}
 
 func (NoTouch) ReadTouch() (x, y int16, pressed bool) { return 0, 0, false }
+
+// Buttons is the state of a game controller: the directions the stick (or
+// a d-pad) is pushed to and the buttons that are down.
+type Buttons uint16
+
+const (
+	PadUp Buttons = 1 << iota
+	PadDown
+	PadLeft
+	PadRight
+	PadA  // press what has the focus (like a tap)
+	PadB  // back
+	PadX  // a shortcut, depending on the game
+	PadY  // a shortcut, depending on the game
+	PadOK // pressing the stick
+
+	PadDirections = PadUp | PadDown | PadLeft | PadRight
+)
+
+// Pad is a game controller. A game that has none gets a nil Pad.
+type Pad interface {
+	ReadPad() Buttons
+}

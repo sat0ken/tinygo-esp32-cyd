@@ -9,6 +9,7 @@ import (
 
 	"github.com/sat0ken/tinygo-cyd/games/cards"
 	"github.com/sat0ken/tinygo-cyd/hal"
+	"github.com/sat0ken/tinygo-cyd/pad"
 	"github.com/sat0ken/tinygo-cyd/romfont/freesans"
 	"github.com/sat0ken/tinygo-cyd/romfont/proggy"
 	"tinygo.org/x/tinyfont"
@@ -29,6 +30,7 @@ var (
 	textColor  = color.RGBA{255, 255, 255, 255}
 	dimText    = color.RGBA{190, 220, 200, 255}
 	winColor   = color.RGBA{255, 220, 60, 255}
+	focusColor = color.RGBA{255, 210, 40, 255}
 )
 
 type rect struct{ x, y, w, h int16 }
@@ -88,6 +90,27 @@ func (l *layout) foundationRect(f int) rect { return rect{l.colX(3 + f), l.topY,
 
 func (l *layout) columnRect(i int) rect { return rect{l.colX(i), l.tabY, l.cardW, l.bottom - l.tabY} }
 
+// target is something that can have the controller's focus.
+type target struct {
+	kind  targetKind
+	pile  int // the button, foundation or column
+	index int // in a column: the face-up card, -1 if the column is empty
+}
+
+type targetKind int
+
+const (
+	buttonTarget targetKind = iota // pile: 0 "< GAMES", 1 NEW, 2 UNDO, 3 DRAW
+	stockTarget
+	wasteTarget
+	foundationTarget
+	columnTarget
+)
+
+// maxTargets: four buttons, stock, waste, four foundations and at most 13
+// face-up cards in each of the seven columns.
+const maxTargets = 4 + 2 + 4 + 7*13
+
 type phase int
 
 const (
@@ -106,6 +129,17 @@ type Game struct {
 	NewSeed func() uint32
 	// OnExit, if set, shows a "< GAMES" button; tapping it calls OnExit.
 	OnExit func()
+
+	// Pad, if set, is the game controller: the stick moves the focus
+	// between the buttons, the stock, the waste, the foundations and the
+	// face-up cards, A presses what has the focus (a card moves where it
+	// fits, with the cards on it), X is UNDO, Y turns over the stock.
+	Pad     hal.Pad
+	in      pad.Input
+	focus   target
+	boxes   [maxTargets]pad.Box
+	targets [maxTargets]target
+	barShow target // the focus when the bar was drawn
 
 	s       State
 	draw    int // 1 or 3 for the next deal
@@ -126,7 +160,8 @@ type Game struct {
 // NewGame creates a game; call Start to deal.
 func NewGame(d hal.Display, t hal.Touch, newSeed func() uint32) *Game {
 	w, h := d.Size()
-	return &Game{d: d, t: t, l: layoutFor(w, h), NewSeed: newSeed, draw: 1, lastTap: -1, drawn: map[rect]string{}}
+	return &Game{d: d, t: t, l: layoutFor(w, h), NewSeed: newSeed, draw: 1, lastTap: -1, drawn: map[rect]string{},
+		focus: target{kind: stockTarget}}
 }
 
 // Start deals a new game and draws the whole screen.
@@ -147,6 +182,11 @@ func (g *Game) Start() {
 // Update reads the touch panel and advances the clock by dt seconds.
 func (g *Game) Update(dt float32) {
 	g.clock += dt
+	used := g.in.Used
+	g.in.Update(g.Pad, dt)
+	if g.in.Used && g.updatePad(!used) {
+		return
+	}
 	x, y, pressed := g.t.ReadTouch()
 	tap := pressed && !g.wasTouch && g.clock-g.lastTap >= tapGap
 	g.wasTouch = pressed
@@ -238,6 +278,195 @@ func (g *Game) tapTable(x, y int16) {
 			return
 		}
 	}
+}
+
+// buttonRect is where bar button k (see target) is.
+func (g *Game) buttonRect(k int) rect {
+	return [4]rect{g.l.back, g.l.new, g.l.undo, g.l.draw}[k]
+}
+
+// press does what a tap on t does. It returns true if the game started
+// over or was left.
+func (g *Game) press(t target) bool {
+	switch t.kind {
+	case buttonTarget:
+		switch t.pile {
+		case 0:
+			g.OnExit()
+		case 1:
+			g.Start()
+		case 2:
+			g.undo()
+			g.dirty = true
+			return false
+		case 3:
+			g.draw = 4 - g.draw
+			g.Start()
+		}
+		return true
+	case stockTarget:
+		g.save()
+		if !g.s.DrawStock() {
+			g.history = g.history[:len(g.history)-1]
+		}
+		g.dirty = true
+	case wasteTarget:
+		g.moveFrom(Pos{Kind: WastePile})
+	case foundationTarget:
+		g.moveFrom(Pos{Kind: FoundationPile, Pile: t.pile})
+	case columnTarget:
+		if t.index >= 0 {
+			g.moveFrom(Pos{Kind: TableauPile, Pile: t.pile, Index: t.index})
+		}
+	}
+	return false
+}
+
+// fixFocus keeps the focus on something that is there: a card that moved
+// away leaves it on the column's last card (or its empty place).
+func (g *Game) fixFocus() {
+	f := &g.focus
+	switch {
+	case f.kind == buttonTarget && f.pile == 0 && g.OnExit == nil:
+		f.pile = 1
+	case f.kind == columnTarget:
+		c := &g.s.Tableau[f.pile]
+		switch {
+		case len(c.Cards) == 0:
+			f.index = -1
+		case f.index >= len(c.Cards) || f.index < 0:
+			f.index = len(c.Cards) - 1
+		case f.index < c.Down:
+			f.index = c.Down
+		}
+	}
+}
+
+// focusRect is the frame of target t: on a column it goes round the card
+// and the cards on it.
+func (g *Game) focusRect(t target) rect {
+	l := &g.l
+	switch t.kind {
+	case buttonTarget:
+		return g.buttonRect(t.pile)
+	case stockTarget:
+		return l.stockRect()
+	case wasteTarget:
+		n := int16(len(g.shownWaste()))
+		if n == 0 {
+			n = 1
+		}
+		return rect{l.colX(1) + (n-1)*l.fanOff, l.topY, l.cardW, l.cardH}
+	case foundationTarget:
+		return l.foundationRect(t.pile)
+	}
+	if t.index < 0 {
+		return rect{l.colX(t.pile), l.tabY, l.cardW, l.cardH}
+	}
+	ys := g.offsets(t.pile)
+	return rect{l.colX(t.pile), ys[t.index], l.cardW, ys[len(ys)-1] + l.cardH - ys[t.index]}
+}
+
+// listTargets fills g.targets and g.boxes with what can have the focus
+// now; a column's face-up card is the part of it that shows.
+func (g *Game) listTargets() int {
+	n := 0
+	add := func(t target, r rect) {
+		g.targets[n], g.boxes[n] = t, pad.Box{X: r.x, Y: r.y, W: r.w, H: r.h}
+		n++
+	}
+	for k := 0; k < 4; k++ {
+		if k > 0 || g.OnExit != nil {
+			add(target{kind: buttonTarget, pile: k}, g.buttonRect(k))
+		}
+	}
+	add(target{kind: stockTarget}, g.l.stockRect())
+	add(target{kind: wasteTarget}, g.focusRect(target{kind: wasteTarget}))
+	for f := 0; f < 4; f++ {
+		add(target{kind: foundationTarget, pile: f}, g.l.foundationRect(f))
+	}
+	for col := 0; col < 7; col++ {
+		c := &g.s.Tableau[col]
+		if len(c.Cards) == 0 {
+			t := target{kind: columnTarget, pile: col, index: -1}
+			add(t, g.focusRect(t))
+			continue
+		}
+		ys := g.offsets(col)
+		for i := c.Down; i < len(c.Cards); i++ {
+			h := g.l.cardH
+			if i < len(c.Cards)-1 {
+				h = ys[i+1] - ys[i]
+			}
+			add(target{kind: columnTarget, pile: col, index: i}, rect{g.l.colX(col), ys[i], g.l.cardW, h})
+		}
+	}
+	return n
+}
+
+// updatePad handles the controller (first: it was used for the first
+// time) and returns true if the game started over or was left.
+func (g *Game) updatePad(first bool) bool {
+	in := &g.in
+	if g.phase == won {
+		if in.Pressed(hal.PadA | hal.PadOK) {
+			g.Start()
+			return true
+		}
+		return false
+	}
+	g.fixFocus()
+	if first {
+		g.dirty = true
+	}
+	if d := in.Direction(); d != 0 {
+		n := g.listTargets()
+		cur := 0
+		for i, t := range g.targets[:n] {
+			if t == g.focus {
+				cur = i
+			}
+		}
+		if f := g.targets[pad.Move(g.boxes[:n], cur, d)]; f != g.focus {
+			g.focus = f
+			g.dirty = true
+		}
+	}
+	switch {
+	case in.Pressed(hal.PadA | hal.PadOK):
+		if g.press(g.focus) {
+			return true
+		}
+	case in.Pressed(hal.PadX):
+		g.undo()
+		g.dirty = true
+	case in.Pressed(hal.PadY):
+		g.press(target{kind: stockTarget})
+	}
+	return false
+}
+
+// focused reports whether the frame of the focus is on something of kind
+// and pile, and returns the key part for its region.
+func (g *Game) focused(kind targetKind, pile int) (bool, string) {
+	if !g.in.Used || g.phase == won || g.focus.kind != kind || g.focus.pile != pile {
+		return false, ""
+	}
+	return true, "f" + strconv.Itoa(g.focus.index)
+}
+
+func (g *Game) frame(r rect) { pad.Frame(g.d, r.x, r.y, r.w, r.h, 2, focusColor) }
+
+// shownWaste returns the waste cards that show.
+func (g *Game) shownWaste() []cards.Card {
+	shown := g.s.Waste
+	if n := len(shown); n > g.s.Draw {
+		shown = shown[n-g.s.Draw:]
+	}
+	if g.s.Draw == 1 && len(shown) > 1 {
+		shown = shown[len(shown)-1:]
+	}
+	return shown
 }
 
 // moveFrom moves the tapped card (and the cards on it) where it fits.
@@ -351,31 +580,37 @@ func cardsKey(p []cards.Card) string {
 func (g *Game) refresh() {
 	g.dirty = false
 	g.shown = [2]int{int(g.elapsed), g.s.Moves}
+	g.fixFocus()
 	l := &g.l
 	cardW, cardH := l.cardW, l.cardH
+	if on, _ := g.focused(buttonTarget, g.focus.pile); on != (g.barShow.kind == buttonTarget) || (on && g.barShow != g.focus) {
+		g.drawBar() // the focus came to, left or moved in the bar
+	}
 	sr := l.stockRect()
-	g.region(sr, strconv.Itoa(len(g.s.Stock)), func() {
+	on, fkey := g.focused(stockTarget, 0)
+	g.region(sr, strconv.Itoa(len(g.s.Stock))+fkey, func() {
 		if len(g.s.Stock) > 0 {
 			cards.DrawBack(g.d, sr.x, sr.y, cardW, cardH)
 		} else {
 			cards.DrawSlot(g.d, sr.x, sr.y, cardW, cardH, "O") // tap to turn the waste over
 		}
+		if on {
+			g.frame(sr)
+		}
 	})
 
 	wr := l.wasteRect()
-	shown := g.s.Waste
-	if n := len(shown); n > g.s.Draw {
-		shown = shown[n-g.s.Draw:]
-	}
-	if g.s.Draw == 1 && len(shown) > 1 {
-		shown = shown[len(shown)-1:]
-	}
-	g.region(wr, cardsKey(shown), func() {
+	shown := g.shownWaste()
+	wasteOn, wkey := g.focused(wasteTarget, 0)
+	g.region(wr, cardsKey(shown)+wkey, func() {
 		if len(shown) == 0 {
 			cards.DrawSlot(g.d, wr.x, wr.y, cardW, cardH, "")
 		}
 		for i, c := range shown {
 			cards.DrawFace(g.d, c, wr.x+int16(i)*l.fanOff, wr.y, cardW, cardH, false)
+		}
+		if wasteOn {
+			g.frame(g.focusRect(g.focus))
 		}
 	})
 
@@ -386,11 +621,15 @@ func (g *Game) refresh() {
 		if len(p) > 0 {
 			key = cardsKey(p[len(p)-1:])
 		}
-		g.region(fr, key, func() {
+		on, fkey := g.focused(foundationTarget, f)
+		g.region(fr, key+fkey, func() {
 			if len(p) == 0 {
 				cards.DrawSlot(g.d, fr.x, fr.y, cardW, cardH, "A")
 			} else {
 				cards.DrawFace(g.d, p[len(p)-1], fr.x, fr.y, cardW, cardH, false)
+			}
+			if on {
+				g.frame(fr)
 			}
 		})
 	}
@@ -398,7 +637,11 @@ func (g *Game) refresh() {
 	for col := 0; col < 7; col++ {
 		cr := l.columnRect(col)
 		c := &g.s.Tableau[col]
-		g.region(cr, strconv.Itoa(c.Down)+":"+cardsKey(c.Cards), func() {
+		on, fkey := g.focused(columnTarget, col)
+		g.region(cr, strconv.Itoa(c.Down)+":"+cardsKey(c.Cards)+fkey, func() {
+			if on {
+				defer g.frame(g.focusRect(g.focus))
+			}
 			if len(c.Cards) == 0 {
 				cards.DrawSlot(g.d, cr.x, cr.y, cardW, cardH, "K")
 				return
@@ -441,6 +684,12 @@ func (g *Game) drawBar() {
 		_, tw := tinyfont.LineWidth(&proggy.TinySZ8pt7b, b.name)
 		tinyfont.WriteLine(g.d, &proggy.TinySZ8pt7b, b.r.x+(b.r.w-int16(tw))/2, b.r.y+14, b.name, textColor)
 	}
+	g.barShow = target{kind: -1}
+	if on, _ := g.focused(buttonTarget, g.focus.pile); on {
+		g.frame(g.buttonRect(g.focus.pile))
+		g.barShow = g.focus
+	}
+	delete(g.drawn, g.l.status) // the bar covers the status
 }
 
 func clock(sec float32) string {

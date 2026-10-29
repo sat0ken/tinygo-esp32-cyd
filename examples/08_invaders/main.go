@@ -39,6 +39,7 @@ func main() {
 		platform.Halt()
 	}
 	g := invaders.NewGame(d, t, uint32(time.Now().UnixNano()))
+	g.Pad = platform.InitPad() // the mini joystick module, if it is connected
 	g.DrawAll()
 	println("08_invaders: started")
 

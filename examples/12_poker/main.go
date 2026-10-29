@@ -32,6 +32,7 @@ func main() {
 		platform.Halt()
 	}
 	g := poker.NewGame(d, t, func() uint32 { return uint32(time.Now().UnixNano()) })
+	g.Pad = platform.InitPad() // the mini joystick module, if it is connected
 	g.Start()
 	println("12_poker: started")
 

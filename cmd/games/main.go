@@ -6,6 +6,11 @@
 // games/solitaire and games/poker; examples/08 to 12 run each of them
 // alone.
 //
+// With the mini joystick module connected (see platform.InitPad), the
+// stick moves a frame between the tiles and the buttons of the games, A
+// presses what is framed, B goes back; in the browser the arrow keys and
+// Z (A), X (B), A (X), S (Y) do the same.
+//
 //	make flash-noerase PKG=./cmd/games && make monitor   # ESP32-4827S043
 //	make flash-s035 PKG=./cmd/games                      # ESP32-3248S035C
 //	make flash-s028 PKG=./cmd/games                      # ESP32-2432S028R (320x240 layouts)
@@ -34,6 +39,7 @@ func main() {
 		n++
 		return uint32(time.Now().UnixNano()) ^ n*0x9E3779B9
 	})
+	l.Pad = platform.InitPad() // the mini joystick module, if it is connected
 	l.DrawMenu()
 	println("games: started")
 

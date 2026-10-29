@@ -43,6 +43,9 @@ func InitLCD() (*rgblcd.Device, error) {
 	return d, nil
 }
 
+// InitPad returns nil: the ESP32-4827S043 has no game controller yet.
+func InitPad() hal.Pad { return nil }
+
 // SetBacklight sets the backlight (GPIO2) brightness in percent with PWM.
 func SetBacklight(percent int) {
 	if !blConfig {

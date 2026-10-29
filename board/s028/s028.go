@@ -112,12 +112,21 @@ const (
 	PinLight    = 34 // CdS light sensor (ADC)
 )
 
+// Mini joystick module (package minijoy) as a game controller: I2C on
+// connector CN1 (GND, IO22, IO27, 3.3V). Checked on the board (2026-10-28,
+// examples/joystick_check).
+const (
+	PinJoySDA = 27
+	PinJoySCL = 22
+)
+
 // E32R28T (LCDwiki 2.8inch ESP32-32E Display): the pins that differ from
 // the ESP32-2432S028R. Its panel reset is wired to EN.
 const (
 	E32R28TPinLEDRed    = 22 // RGB LED (common anode), low = on; green 16, blue 17 as above
 	E32R28TPinAmpEnable = 4  // speaker amplifier, low = enabled (the red LED on the S028R)
 	E32R28TPinBattery   = 34 // battery voltage (ADC), not a light sensor
+	E32R28TPinJoySCL    = 18 // joystick SCL on the SPI connector (IO22 is the red LED); SDA is IO27 too
 )
 
 // Connectors: P1 (VIN, TX, RX, GND), P3 (GND, IO35, IO22, IO21 = backlight),

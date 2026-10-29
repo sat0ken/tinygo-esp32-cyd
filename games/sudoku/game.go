@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/sat0ken/tinygo-cyd/hal"
+	"github.com/sat0ken/tinygo-cyd/pad"
 	"github.com/sat0ken/tinygo-cyd/romfont/freesans"
 	"github.com/sat0ken/tinygo-cyd/romfont/proggy"
 	"tinygo.org/x/tinyfont"
@@ -34,6 +35,7 @@ var (
 	textColor    = color.RGBA{255, 255, 255, 255}
 	dimText      = color.RGBA{150, 160, 180, 255}
 	winColor     = color.RGBA{90, 230, 120, 255}
+	focusColor   = color.RGBA{255, 210, 40, 255}
 )
 
 // Difficulty is the number of clues left in the puzzle.
@@ -156,11 +158,21 @@ func (l *layout) menuButton(k int) rect {
 
 func backButton() rect { return rect{8, 8, 84, 28} }
 
-// look is how a cell is drawn; cells are redrawn only when it changes.
+// look is how a cell or a key is drawn; they are redrawn only when it
+// changes.
 type look struct {
 	bg, fg color.RGBA
 	digit  uint8
+	focus  bool // a key with the controller's focus
 }
+
+// The controller's focus on the play screen: the cells, the keys of the
+// number pad, the buttons.
+const (
+	focusKeys    = 81
+	focusButtons = focusKeys + 9
+	focusCount   = focusButtons + 3
+)
 
 // Game is the sudoku game. It depends only on hal.
 type Game struct {
@@ -174,6 +186,17 @@ type Game struct {
 	// OnExit, if set, shows a "< GAMES" button on the menu; tapping it
 	// calls OnExit (used by the cmd/games launcher).
 	OnExit func()
+
+	// Pad, if set, is the game controller. The stick moves the focus: on
+	// the menu between the buttons, on the grid it selects the cell, and
+	// to the right of the grid it reaches the number pad and the buttons.
+	// A presses what has the focus (on a cell: go to the number pad, on a
+	// key: enter it and go back to the cell), B goes back to the cell (on
+	// the menu: "< GAMES"), X erases, Y gives a hint.
+	Pad   hal.Pad
+	in    pad.Input
+	focus int // on the menu: a difficulty or 3 for "< GAMES"; when playing: see focusKeys
+	boxes [focusCount]pad.Box
 
 	screen   screen
 	diff     int
@@ -192,13 +215,29 @@ type Game struct {
 	drawn      [81]look
 	drawnPad   [9]look
 	drawnState string
+	drawnBtns  int // the button with the focus when the buttons were drawn, -1 none, -2 not drawn
 }
 
 // NewGame shows the difficulty menu.
 func NewGame(d hal.Display, t hal.Touch, newSeed func() uint32) *Game {
 	w, h := d.Size()
-	return &Game{d: d, t: t, l: layoutFor(w, h), NewSeed: newSeed, sel: -1, lastTap: -1}
+	g := &Game{d: d, t: t, l: layoutFor(w, h), NewSeed: newSeed, sel: -1, lastTap: -1}
+	for i := range g.boxes {
+		var r rect
+		switch {
+		case i < focusKeys:
+			r = g.l.cellRect(i)
+		case i < focusButtons:
+			r = g.l.padRect(i - focusKeys)
+		default:
+			r = g.l.buttons[i-focusButtons]
+		}
+		g.boxes[i] = pad.Box{X: r.x, Y: r.y, W: r.w, H: r.h}
+	}
+	return g
 }
+
+func (g *Game) frame(r rect) { pad.Frame(g.d, r.x, r.y, r.w, r.h, 2, focusColor) }
 
 // ---- drawing helpers ----
 
@@ -220,16 +259,45 @@ func (g *Game) DrawMenu() {
 	g.textCentered(rect{0, 0, w, 0}, &proggy.TinySZ8pt7b, "choose a difficulty", dimText, g.l.subBase)
 	for k, df := range difficulties {
 		r := g.l.menuButton(k)
-		g.fill(r, df.Color)
-		g.textCentered(r, g.l.menuFont, df.Name, textColor, g.l.menuBase)
 		g.textCentered(rect{r.x, r.y + r.h, r.w, 0}, &proggy.TinySZ8pt7b, strconv.Itoa(df.Clues)+" clues", dimText, 18)
+	}
+	for k := range g.menuBoxes() {
+		g.drawMenuItem(k)
+	}
+	g.d.Display()
+}
+
+// menuBoxes are the buttons of the menu: the difficulties and "< GAMES".
+func (g *Game) menuBoxes() []pad.Box {
+	var b [4]pad.Box
+	n := len(difficulties)
+	for k := 0; k < n; k++ {
+		r := g.l.menuButton(k)
+		b[k] = pad.Box{X: r.x, Y: r.y, W: r.w, H: r.h}
 	}
 	if g.OnExit != nil {
 		r := backButton()
+		b[n] = pad.Box{X: r.x, Y: r.y, W: r.w, H: r.h}
+		n++
+	}
+	return b[:n]
+}
+
+// drawMenuItem draws button k of the menu (see menuBoxes).
+func (g *Game) drawMenuItem(k int) {
+	if k == len(difficulties) {
+		r := backButton()
 		g.fill(r, btnColor)
 		g.textCentered(r, &proggy.TinySZ8pt7b, "< GAMES", textColor, 18)
+	} else {
+		r, df := g.l.menuButton(k), difficulties[k]
+		g.fill(r, df.Color)
+		g.textCentered(r, g.l.menuFont, df.Name, textColor, g.l.menuBase)
 	}
-	g.d.Display()
+	if g.in.Used && k == g.focus {
+		b := g.menuBoxes()[k]
+		g.frame(rect{b.X, b.Y, b.W, b.H})
+	}
 }
 
 // startGame generates a puzzle and draws the play screen.
@@ -247,6 +315,7 @@ func (g *Game) startGame(diff int) {
 	g.mistakes = 0
 	g.elapsed = 0
 	g.screen = playScreen
+	g.focus = 40 // the middle cell, selected by the first move of the stick
 	g.drawPlay()
 }
 
@@ -266,12 +335,17 @@ func (g *Game) drawPlay() {
 	g.drawn = [81]look{}
 	g.drawnPad = [9]look{}
 	g.drawnState = ""
-	for k, name := range []string{"ERASE", "HINT", "NEW"} {
-		r := g.l.buttons[k]
-		g.fill(r, btnColor)
-		g.textCentered(r, &proggy.TinySZ8pt7b, name, textColor, g.l.btnBase)
-	}
+	g.drawnBtns = -2
 	g.refresh()
+}
+
+// padFocus returns what has the controller's focus on the play screen
+// (see focusKeys), or -1 before the controller is used.
+func (g *Game) padFocus() int {
+	if !g.in.Used || g.screen != playScreen {
+		return -1
+	}
+	return g.focus
 }
 
 // cellLook decides how cell i should look now.
@@ -350,13 +424,32 @@ func (g *Game) refresh() {
 		case d == selDigit:
 			l.bg, l.fg = padHiColor, bgColor
 		}
+		l.focus = g.padFocus() == focusKeys+k
 		if l == g.drawnPad[k] {
 			continue
 		}
 		r := g.l.padRect(k)
 		g.fill(r, l.bg)
 		g.textCentered(r, &freesans.Bold12pt7b, string(rune('0'+d)), l.fg, g.l.padBase)
+		if l.focus {
+			g.frame(r)
+		}
 		g.drawnPad[k] = l
+	}
+
+	if f := g.padFocus() - focusButtons; f != g.drawnBtns && (f >= 0 || g.drawnBtns != -1) {
+		if f < 0 {
+			f = -1
+		}
+		for k, name := range []string{"ERASE", "HINT", "NEW"} {
+			r := g.l.buttons[k]
+			g.fill(r, btnColor)
+			g.textCentered(r, &proggy.TinySZ8pt7b, name, textColor, g.l.btnBase)
+			if k == f {
+				g.frame(r)
+			}
+		}
+		g.drawnBtns = f
 	}
 
 	g.drawStatus()
@@ -412,9 +505,15 @@ func (g *Game) drawSolved() {
 
 // ---- input ----
 
-// Update reads the touch panel and advances the clock by dt seconds.
+// Update reads the touch panel and the controller and advances the clock
+// by dt seconds.
 func (g *Game) Update(dt float32) {
 	g.clock += dt
+	used := g.in.Used
+	g.in.Update(g.Pad, dt)
+	if g.in.Used && g.updatePad(!used) {
+		return
+	}
 	x, y, pressed := g.t.ReadTouch()
 	tap := pressed && !g.wasTouch && g.clock-g.lastTap >= tapGap
 	g.wasTouch = pressed
@@ -481,6 +580,113 @@ func (g *Game) tapPlay(x, y int16) {
 	case l.buttons[2].has(x, y):
 		g.DrawMenu()
 	}
+}
+
+// updatePad handles the controller (first: it was used for the first
+// time) and returns true if the screen changed.
+func (g *Game) updatePad(first bool) bool {
+	in := &g.in
+	switch g.screen {
+	case menuScreen:
+		boxes := g.menuBoxes()
+		if g.focus >= len(boxes) {
+			g.focus = 0
+		}
+		if first {
+			g.drawMenuItem(g.focus)
+			g.d.Display()
+		}
+		if d := in.Direction(); d != 0 {
+			if f := pad.Move(boxes, g.focus, d); f != g.focus {
+				old := g.focus
+				g.focus = f
+				g.drawMenuItem(old)
+				g.drawMenuItem(f)
+				g.d.Display()
+			}
+		}
+		switch {
+		case in.Pressed(hal.PadB) && g.OnExit != nil, in.Pressed(hal.PadA|hal.PadOK) && g.focus == len(difficulties):
+			g.OnExit()
+			return true
+		case in.Pressed(hal.PadA | hal.PadOK):
+			g.startGame(g.focus)
+			return true
+		}
+	case playScreen:
+		if g.focus < focusKeys && g.sel >= 0 {
+			g.focus = g.sel // a tap may have selected another cell
+		}
+		if d := in.Direction(); d != 0 {
+			if g.sel < 0 && g.focus < focusKeys {
+				g.focus = 40 // the first move selects the middle cell
+			} else {
+				g.focus = pad.Move(g.boxes[:], g.focus, d)
+			}
+			if g.focus < focusKeys {
+				g.sel = g.focus
+			}
+		}
+		switch {
+		case in.Pressed(hal.PadA | hal.PadOK):
+			g.padPress()
+		case in.Pressed(hal.PadB):
+			g.focusCell()
+		case in.Pressed(hal.PadX):
+			g.erase()
+		case in.Pressed(hal.PadY):
+			g.hint()
+			g.focusCell()
+		}
+		switch g.screen {
+		case menuScreen:
+			return true // NEW
+		case solvedScreen:
+			g.refresh() // the last digit
+			return true
+		}
+	case solvedScreen:
+		if in.Pressed(hal.PadA | hal.PadOK | hal.PadB) {
+			g.focus = g.diff
+			g.DrawMenu()
+			return true
+		}
+	}
+	return false
+}
+
+// padPress presses what has the focus on the play screen.
+func (g *Game) padPress() {
+	switch f := g.focus; {
+	case f < focusKeys:
+		// Go to the number pad, on the digit of the cell.
+		d := 5
+		if g.sel >= 0 && g.board[g.sel] != 0 {
+			d = int(g.board[g.sel])
+		}
+		g.sel = f
+		g.focus = focusKeys + d - 1
+	case f < focusButtons:
+		g.enter(uint8(f - focusKeys + 1))
+		g.focusCell()
+	case f == focusButtons:
+		g.erase()
+		g.focusCell()
+	case f == focusButtons+1:
+		g.hint()
+		g.focusCell()
+	default:
+		g.focus = g.diff
+		g.DrawMenu()
+	}
+}
+
+// focusCell moves the focus back to the selected cell.
+func (g *Game) focusCell() {
+	if g.sel < 0 {
+		g.sel = 40
+	}
+	g.focus = g.sel
 }
 
 // editable reports whether the selected cell can be changed.

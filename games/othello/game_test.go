@@ -6,8 +6,10 @@ import (
 	"time"
 
 	"github.com/sat0ken/tinygo-cyd/board"
+	"github.com/sat0ken/tinygo-cyd/hal"
 	"github.com/sat0ken/tinygo-cyd/internal/goldentest"
 	"github.com/sat0ken/tinygo-cyd/memlcd"
+	"github.com/sat0ken/tinygo-cyd/pad"
 )
 
 const dt = float32(0.05)
@@ -242,4 +244,94 @@ func TestHumanPasses(t *testing.T) {
 func rgb565(c interface{ RGBA() (r, g, b, a uint32) }) uint16 {
 	r, gg, b, _ := c.RGBA()
 	return uint16(r>>8&0xF8)<<8 | uint16(gg>>8&0xFC)<<3 | uint16(b>>8)>>3
+}
+
+// press presses b on the controller for one frame and lets go.
+func press(g *Game, f *pad.Fake, b hal.Buttons) {
+	f.B = b
+	g.Update(dt)
+	f.B = 0
+	g.Update(dt)
+}
+
+// TestPad plays with the controller only: WHITE and EASY on the menu, a
+// move with the cursor, UNDO with X, and NEW.
+func TestPad(t *testing.T) {
+	for _, s := range sizes {
+		g, d, _ := newTestGameSize(s.w, s.h)
+		f := &pad.Fake{}
+		g.Pad = f
+		g.Update(dt)
+		press(g, f, hal.PadUp) // from NORMAL to the colours
+		if g.menuFocus >= 2 {
+			t.Fatalf("%dx%d: up from NORMAL: focus %d", s.w, s.h, g.menuFocus)
+		}
+		if g.menuFocus == 0 {
+			press(g, f, hal.PadRight)
+		}
+		press(g, f, hal.PadA)
+		if g.humanBlack {
+			t.Fatalf("%dx%d: WHITE not chosen", s.w, s.h)
+		}
+		press(g, f, hal.PadDown)
+		for n := 0; g.menuFocus != 2; n++ {
+			if n > 3 {
+				t.Fatalf("%dx%d: EASY not reached", s.w, s.h)
+			}
+			press(g, f, hal.PadLeft)
+		}
+		press(g, f, hal.PadA)
+		settle(t, g)
+		if g.phase != humanTurn || stones(g) != 5 {
+			t.Fatalf("%dx%d: phase %d stones %d", s.w, s.h, g.phase, stones(g))
+		}
+		r := g.l.squareRect(g.focus)
+		if d.Pixel(r.x, r.y) != rgb565(focusColor) {
+			t.Fatalf("%dx%d: no cursor on square %d", s.w, s.h, g.focus)
+		}
+
+		// Walk the cursor to the first legal move and play it.
+		to := bits.TrailingZeros64(g.pos.Moves())
+		for n := 0; g.focus != to; n++ {
+			if n > 16 {
+				t.Fatalf("%dx%d: cursor at %d, not at %d", s.w, s.h, g.focus, to)
+			}
+			switch {
+			case g.focus/8 > to/8:
+				press(g, f, hal.PadUp)
+			case g.focus/8 < to/8:
+				press(g, f, hal.PadDown)
+			case g.focus%8 > to%8:
+				press(g, f, hal.PadLeft)
+			default:
+				press(g, f, hal.PadRight)
+			}
+		}
+		before := g.pos
+		press(g, f, hal.PadA)
+		settle(t, g)
+		if stones(g) != 7 || g.phase != humanTurn {
+			t.Fatalf("%dx%d: after a move each: stones %d phase %d", s.w, s.h, stones(g), g.phase)
+		}
+		press(g, f, hal.PadX) // UNDO
+		if g.pos != before {
+			t.Fatalf("%dx%d: X did not undo the move", s.w, s.h)
+		}
+
+		// Right from the last column reaches UNDO and NEW; NEW goes back
+		// to the menu.
+		for n := 0; g.focus < focusUndo; n++ {
+			if n > 8 {
+				t.Fatalf("%dx%d: right does not reach the buttons", s.w, s.h)
+			}
+			press(g, f, hal.PadRight)
+		}
+		if g.focus == focusUndo {
+			press(g, f, hal.PadRight)
+		}
+		press(g, f, hal.PadA)
+		if g.phase != menu {
+			t.Fatalf("%dx%d: NEW did not go back to the menu", s.w, s.h)
+		}
+	}
 }

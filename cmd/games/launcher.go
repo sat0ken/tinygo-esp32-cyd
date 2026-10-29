@@ -11,6 +11,7 @@ import (
 	"github.com/sat0ken/tinygo-cyd/games/solitaire"
 	"github.com/sat0ken/tinygo-cyd/games/sudoku"
 	"github.com/sat0ken/tinygo-cyd/hal"
+	"github.com/sat0ken/tinygo-cyd/pad"
 	"github.com/sat0ken/tinygo-cyd/romfont/freesans"
 	"github.com/sat0ken/tinygo-cyd/romfont/proggy"
 	"tinygo.org/x/tinydraw"
@@ -31,6 +32,7 @@ var (
 	invColor   = color.RGBA{80, 220, 255, 255}
 	gridColor  = color.RGBA{170, 180, 200, 255}
 	digitColor = color.RGBA{120, 200, 255, 255}
+	focusColor = color.RGBA{255, 210, 40, 255}
 )
 
 type rect struct{ x, y, w, h int16 }
@@ -46,31 +48,31 @@ type entry struct {
 var entries = []entry{
 	{"INVADERS", "hold to fire", drawInvaderIcon, func(l *Launcher) game {
 		g := invaders.NewGame(l.d, l.t, l.Seed())
-		g.OnExit = l.exit
+		g.OnExit, g.Pad = l.exit, l.Pad
 		g.DrawAll()
 		return g
 	}},
 	{"SUDOKU", "3 levels", drawSudokuIcon, func(l *Launcher) game {
 		g := sudoku.NewGame(l.d, l.t, l.Seed)
-		g.OnExit = l.exit
+		g.OnExit, g.Pad = l.exit, l.Pad
 		g.DrawMenu()
 		return g
 	}},
 	{"OTHELLO", "vs the CPU", drawOthelloIcon, func(l *Launcher) game {
 		g := othello.NewGame(l.d, l.t, l.Seed())
-		g.OnExit = l.exit
+		g.OnExit, g.Pad = l.exit, l.Pad
 		g.DrawMenu()
 		return g
 	}},
 	{"SOLITAIRE", "draw 1 or 3", drawSolitaireIcon, func(l *Launcher) game {
 		g := solitaire.NewGame(l.d, l.t, l.Seed)
-		g.OnExit = l.exit
+		g.OnExit, g.Pad = l.exit, l.Pad
 		g.Start()
 		return g
 	}},
 	{"POKER", "jacks or better", drawPokerIcon, func(l *Launcher) game {
 		g := poker.NewGame(l.d, l.t, l.Seed)
-		g.OnExit = l.exit
+		g.OnExit, g.Pad = l.exit, l.Pad
 		g.Start()
 		return g
 	}},
@@ -126,6 +128,13 @@ type Launcher struct {
 	// Seed returns a new random seed for a game.
 	Seed func() uint32
 
+	// Pad, if set, is the game controller: the stick moves the focus
+	// between the tiles, A (or pressing the stick) starts a game. The
+	// games get it too.
+	Pad   hal.Pad
+	in    pad.Input
+	focus int
+
 	current     game
 	leaving     bool // the current game asked to exit
 	waitRelease bool // ignore the touch until the finger is lifted
@@ -164,16 +173,55 @@ func (l *Launcher) DrawMenu() {
 	w, h := l.d.Size()
 	l.d.FillRectangle(0, 0, w, h, bgColor)
 	center(l.d, rect{0, 0, w, 0}, &freesans.Bold12pt7b, "TINYGO GAMES", textColor, l.l.titleBase)
-	for k, e := range entries {
-		r := l.l.tileRect(k)
-		l.d.FillRectangle(r.x, r.y, r.w, r.h, tileColor)
-		i := l.l.icon
-		e.icon(l, rect{r.x + i.x, r.y + i.y, i.w, i.h})
-		center(l.d, r, nameFont, e.name, textColor, l.l.nameBase)
-		center(l.d, r, aboutFont, e.about, dimText, l.l.aboutBase)
+	for k := range entries {
+		l.drawTile(k)
 	}
 	center(l.d, rect{0, 0, w, 0}, &proggy.TinySZ8pt7b, "tap a game", dimText, l.l.footBase)
 	l.d.Display()
+}
+
+// drawTile draws tile k, with a frame if it has the focus.
+func (l *Launcher) drawTile(k int) {
+	e, r := &entries[k], l.l.tileRect(k)
+	l.d.FillRectangle(r.x, r.y, r.w, r.h, tileColor)
+	i := l.l.icon
+	e.icon(l, rect{r.x + i.x, r.y + i.y, i.w, i.h})
+	center(l.d, r, nameFont, e.name, textColor, l.l.nameBase)
+	center(l.d, r, aboutFont, e.about, dimText, l.l.aboutBase)
+	if l.in.Used && k == l.focus {
+		pad.Frame(l.d, r.x, r.y, r.w, r.h, 3, focusColor)
+	}
+}
+
+// updatePad moves the focus and returns the game to start, or -1.
+func (l *Launcher) updatePad(dt float32) int {
+	used := l.in.Used
+	l.in.Update(l.Pad, dt)
+	if !l.in.Used {
+		return -1
+	}
+	if !used {
+		l.drawTile(l.focus) // the first use shows the focus
+		l.d.Display()
+	}
+	if d := l.in.Direction(); d != 0 {
+		var boxes [6]pad.Box // the grid has six places
+		for k := range entries {
+			r := l.l.tileRect(k)
+			boxes[k] = pad.Box{X: r.x, Y: r.y, W: r.w, H: r.h}
+		}
+		if f := pad.Move(boxes[:len(entries)], l.focus, d); f != l.focus {
+			old := l.focus
+			l.focus = f
+			l.drawTile(old)
+			l.drawTile(f)
+			l.d.Display()
+		}
+	}
+	if l.in.Pressed(hal.PadA | hal.PadOK) {
+		return l.focus
+	}
+	return -1
 }
 
 // Update runs one frame of the launcher or of the current game.
@@ -190,9 +238,14 @@ func (l *Launcher) Update(dt float32) {
 		if l.leaving {
 			l.leaving = false
 			l.current = nil // the game is garbage now
+			l.in.Reset()    // the game read the controller meanwhile
 			l.DrawMenu()
 			l.waitRelease = true // the finger is still on the "< GAMES" button
 		}
+		return
+	}
+	if k := l.updatePad(dt); k >= 0 {
+		l.start(k)
 		return
 	}
 	x, y, pressed := l.t.ReadTouch()
@@ -201,16 +254,21 @@ func (l *Launcher) Update(dt float32) {
 	if !tap {
 		return
 	}
-	for k, e := range entries {
+	for k := range entries {
 		if l.l.tileRect(k).has(x, y) {
-			println("games: start", e.name)
-			l.current = e.start(l)
+			l.focus = k
+			l.start(k)
 			// The finger is still on the tile: do not let the game see it
 			// as a tap on its first screen.
 			l.waitRelease = true
 			return
 		}
 	}
+}
+
+func (l *Launcher) start(k int) {
+	println("games: start", entries[k].name)
+	l.current = entries[k].start(l)
 }
 
 func center(d hal.Display, r rect, font tinyfont.Fonter, s string, c color.RGBA, baseline int16) {

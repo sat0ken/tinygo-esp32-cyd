@@ -4,8 +4,10 @@ import (
 	"testing"
 
 	"github.com/sat0ken/tinygo-cyd/board"
+	"github.com/sat0ken/tinygo-cyd/hal"
 	"github.com/sat0ken/tinygo-cyd/internal/goldentest"
 	"github.com/sat0ken/tinygo-cyd/memlcd"
+	"github.com/sat0ken/tinygo-cyd/pad"
 )
 
 const dt = float32(0.05)
@@ -230,4 +232,132 @@ func TestTapGapIgnoresBounce(t *testing.T) {
 func rgb(c interface{ RGBA() (r, g, b, a uint32) }) uint16 {
 	r, gg, b, _ := c.RGBA()
 	return uint16(r>>8&0xF8)<<8 | uint16(gg>>8&0xFC)<<3 | uint16(b>>8)>>3
+}
+
+// press presses b on the controller for one frame and lets go.
+func press(g *Game, f *pad.Fake, b hal.Buttons) {
+	f.B = b
+	g.Update(dt)
+	f.B = 0
+	g.Update(dt)
+}
+
+// TestPad plays with the controller only: choose MEDIUM on the menu, move
+// to an empty cell, enter the right digit through the number pad, erase
+// it with X, get a hint with Y, and go back to the menu with NEW.
+func TestPad(t *testing.T) {
+	for _, s := range sizes {
+		g, d, _ := newTestGameSize(s.w, s.h)
+		f := &pad.Fake{}
+		g.Pad = f
+		g.Update(dt)
+		press(g, f, hal.PadRight)
+		r := g.l.menuButton(1)
+		if g.focus != 1 || d.Pixel(r.x, r.y) != rgb(focusColor) {
+			t.Fatalf("%dx%d: focus %d, MEDIUM has no frame", s.w, s.h, g.focus)
+		}
+		press(g, f, hal.PadA)
+		if g.screen != playScreen || g.diff != 1 {
+			t.Fatalf("%dx%d: screen %d diff %d", s.w, s.h, g.screen, g.diff)
+		}
+
+		press(g, f, hal.PadDown) // the first move selects the middle cell
+		if g.sel != 40 {
+			t.Fatalf("%dx%d: selected %d", s.w, s.h, g.sel)
+		}
+		i := emptyCell(g)
+		for g.sel/9 > i/9 {
+			press(g, f, hal.PadUp)
+		}
+		for g.sel/9 < i/9 {
+			press(g, f, hal.PadDown)
+		}
+		for g.sel%9 > i%9 {
+			press(g, f, hal.PadLeft)
+		}
+		for g.sel%9 < i%9 {
+			press(g, f, hal.PadRight)
+		}
+		if g.sel != i {
+			t.Fatalf("%dx%d: selected %d, want %d", s.w, s.h, g.sel, i)
+		}
+
+		press(g, f, hal.PadA) // to the number pad, on 5
+		if g.focus != focusKeys+4 || d.Pixel(g.l.padRect(4).x, g.l.padRect(4).y) != rgb(focusColor) {
+			t.Fatalf("%dx%d: focus %d after A on a cell", s.w, s.h, g.focus)
+		}
+		want := int(g.solution[i]) - 1
+		for k := 4; k != want; {
+			switch {
+			case want/3 < k/3:
+				press(g, f, hal.PadUp)
+			case want/3 > k/3:
+				press(g, f, hal.PadDown)
+			case want%3 < k%3:
+				press(g, f, hal.PadLeft)
+			default:
+				press(g, f, hal.PadRight)
+			}
+			if g.focus < focusKeys || g.focus >= focusButtons {
+				t.Fatalf("%dx%d: the focus left the number pad: %d", s.w, s.h, g.focus)
+			}
+			k = g.focus - focusKeys
+		}
+		press(g, f, hal.PadA)
+		if g.board[i] != g.solution[i] || g.mistakes != 0 || g.focus != i {
+			t.Fatalf("%dx%d: board %d mistakes %d focus %d", s.w, s.h, g.board[i], g.mistakes, g.focus)
+		}
+
+		press(g, f, hal.PadX)
+		if g.board[i] != 0 {
+			t.Fatalf("%dx%d: X did not erase", s.w, s.h)
+		}
+		press(g, f, hal.PadY)
+		if g.board[i] != g.solution[i] || !g.hinted[i] {
+			t.Fatalf("%dx%d: Y did not give a hint", s.w, s.h)
+		}
+
+		// Right from the last column reaches the number pad, then the
+		// buttons below it; NEW goes back to the menu.
+		for n := 0; g.focus < focusKeys; n++ {
+			if n > 9 {
+				t.Fatalf("%dx%d: right does not reach the number pad", s.w, s.h)
+			}
+			press(g, f, hal.PadRight)
+		}
+		for n := 0; g.focus < focusButtons; n++ {
+			if n > 4 {
+				t.Fatalf("%dx%d: down does not reach the buttons", s.w, s.h)
+			}
+			press(g, f, hal.PadDown)
+		}
+		for n := 0; g.focus != focusButtons+2; n++ {
+			if n > 4 {
+				t.Fatalf("%dx%d: NEW not reached (focus %d)", s.w, s.h, g.focus)
+			}
+			if g.l.buttons[2].y > g.boxes[g.focus].Y { // 320x240: NEW is below
+				press(g, f, hal.PadDown)
+			} else {
+				press(g, f, hal.PadRight)
+			}
+		}
+		press(g, f, hal.PadA)
+		if g.screen != menuScreen {
+			t.Fatalf("%dx%d: NEW did not go back to the menu", s.w, s.h)
+		}
+	}
+}
+
+func TestPadBackToGames(t *testing.T) {
+	g, _, _ := newTestGame()
+	left := false
+	g.OnExit = func() { left = true }
+	f := &pad.Fake{}
+	g.Pad = f
+	g.DrawMenu()
+	g.Update(dt)
+	press(g, f, hal.PadB)
+	if !left {
+		t.Fatal("B on the menu did not call OnExit")
+	}
 }

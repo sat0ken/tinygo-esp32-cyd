@@ -33,6 +33,7 @@ func main() {
 		platform.Halt()
 	}
 	g := othello.NewGame(d, t, uint32(time.Now().UnixNano()))
+	g.Pad = platform.InitPad() // the mini joystick module, if it is connected
 	g.DrawMenu()
 	println("10_othello: started")
 

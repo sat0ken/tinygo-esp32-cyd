@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/sat0ken/tinygo-cyd/hal"
+	"github.com/sat0ken/tinygo-cyd/pad"
 	"github.com/sat0ken/tinygo-cyd/romfont/freesans"
 	"github.com/sat0ken/tinygo-cyd/romfont/proggy"
 	"tinygo.org/x/tinydraw"
@@ -40,6 +41,7 @@ var (
 	selBtnColor = color.RGBA{60, 140, 210, 255}
 	turnColor   = color.RGBA{255, 210, 90, 255}
 	levelColors = []color.RGBA{{40, 140, 70, 255}, {190, 140, 30, 255}, {190, 50, 50, 255}}
+	focusColor  = color.RGBA{255, 210, 40, 255}
 )
 
 type rect struct{ x, y, w, h int16 }
@@ -140,10 +142,17 @@ const (
 
 // sqLook is how a square is drawn; squares are redrawn only when it changes.
 type sqLook struct {
-	stone int
-	hint  bool // a legal move for the player
-	last  bool // the last move
+	stone  int
+	hint   bool // a legal move for the player
+	last   bool // the last move
+	cursor bool // the controller's focus
 }
+
+// The controller's focus when playing: the squares, then the buttons.
+const (
+	focusUndo = 64
+	focusNew  = 65
+)
 
 // snapshot is a position saved for UNDO.
 type snapshot struct {
@@ -164,6 +173,16 @@ type Game struct {
 	// OnExit, if set, shows a "< GAMES" button on the menu; tapping it
 	// calls OnExit (used by the cmd/games launcher).
 	OnExit func()
+
+	// Pad, if set, is the game controller. The stick moves the focus: on
+	// the menu between the buttons, when playing a cursor on the board and,
+	// to the right of it, UNDO and NEW. A presses what has the focus (on
+	// the board: play there), X is UNDO, B on the menu is "< GAMES".
+	Pad        hal.Pad
+	in         pad.Input
+	menuFocus  int // see menuBoxes
+	focus      int // a square or focusUndo, focusNew
+	drawnFocus int // focus when UNDO and NEW were drawn
 
 	phase      phase
 	humanBlack bool // the player has the black stones (moves first)
@@ -193,7 +212,8 @@ func NewGame(d hal.Display, t hal.Touch, seed uint32) *Game {
 		seed = 1
 	}
 	w, h := d.Size()
-	return &Game{d: d, t: t, l: layoutFor(w, h), Now: time.Now, humanBlack: true, level: 1, lastTap: -1, rng: seed}
+	return &Game{d: d, t: t, l: layoutFor(w, h), Now: time.Now, humanBlack: true, level: 1, lastTap: -1, rng: seed,
+		menuFocus: 3, focus: 19} // NORMAL, d3
 }
 
 func (g *Game) noise(n int) int {
@@ -252,28 +272,131 @@ func (g *Game) DrawMenu() {
 	l := &g.l
 	g.textCentered(rect{0, 0, w, 0}, &freesans.Bold24pt7b, "OTHELLO", textColor, l.titleBase)
 	g.textCentered(rect{0, 0, w, 0}, &proggy.TinySZ8pt7b, "YOU PLAY", dimText, l.playBase)
-	for k, name := range []string{"BLACK (1st)", "WHITE (2nd)"} {
-		r := l.colorButton(k)
+	g.textCentered(rect{0, 0, w, 0}, &proggy.TinySZ8pt7b, "CPU LEVEL - TAP TO START", dimText, l.levelBase)
+	for k := range g.menuBoxes() {
+		g.drawMenuItem(k)
+	}
+	g.d.Display()
+}
+
+// menuBoxes are the buttons of the menu: BLACK, WHITE, the levels and
+// "< GAMES".
+func (g *Game) menuBoxes() []pad.Box {
+	var b [6]pad.Box
+	n := 0
+	add := func(r rect) {
+		b[n] = pad.Box{X: r.x, Y: r.y, W: r.w, H: r.h}
+		n++
+	}
+	add(g.l.colorButton(0))
+	add(g.l.colorButton(1))
+	for k := range levels {
+		add(g.l.levelButton(k))
+	}
+	if g.OnExit != nil {
+		add(backButton())
+	}
+	return b[:n]
+}
+
+// drawMenuItem draws button k of the menu (see menuBoxes).
+func (g *Game) drawMenuItem(k int) {
+	l := &g.l
+	var r rect
+	switch {
+	case k < 2:
+		r = l.colorButton(k)
 		c := btnColor
 		if (k == 0) == g.humanBlack {
 			c = selBtnColor
 		}
 		g.fill(r, c)
 		g.stone(r.x+l.colorText-20, r.y+r.h/2, k == 0)
-		tinyfont.WriteLine(g.d, &proggy.TinySZ8pt7b, r.x+l.colorText, r.y+r.h/2+4, name, textColor)
-	}
-	g.textCentered(rect{0, 0, w, 0}, &proggy.TinySZ8pt7b, "CPU LEVEL - TAP TO START", dimText, l.levelBase)
-	for k, lv := range levels {
-		r := l.levelButton(k)
-		g.fill(r, levelColors[k])
-		g.textCentered(r, l.levelFont, lv.Name, textColor, (r.h+int16(capHeight(l.levelFont)))/2)
-	}
-	if g.OnExit != nil {
-		r := backButton()
+		tinyfont.WriteLine(g.d, &proggy.TinySZ8pt7b, r.x+l.colorText, r.y+r.h/2+4, []string{"BLACK (1st)", "WHITE (2nd)"}[k], textColor)
+	case k < 2+len(levels):
+		r = l.levelButton(k - 2)
+		g.fill(r, levelColors[k-2])
+		g.textCentered(r, l.levelFont, levels[k-2].Name, textColor, (r.h+int16(capHeight(l.levelFont)))/2)
+	default:
+		r = backButton()
 		g.fill(r, btnColor)
 		g.textCentered(r, &proggy.TinySZ8pt7b, "< GAMES", textColor, 18)
 	}
-	g.d.Display()
+	if g.in.Used && k == g.menuFocus {
+		pad.Frame(g.d, r.x, r.y, r.w, r.h, 2, focusColor)
+	}
+}
+
+// updatePad handles the controller (first: it was used for the first
+// time) and returns true if the screen changed.
+func (g *Game) updatePad(first bool) bool {
+	in := &g.in
+	if g.phase == menu {
+		boxes := g.menuBoxes()
+		if g.menuFocus >= len(boxes) {
+			g.menuFocus = 3
+		}
+		if first {
+			g.drawMenuItem(g.menuFocus)
+			g.d.Display()
+		}
+		if d := in.Direction(); d != 0 {
+			if f := pad.Move(boxes, g.menuFocus, d); f != g.menuFocus {
+				old := g.menuFocus
+				g.menuFocus = f
+				g.drawMenuItem(old)
+				g.drawMenuItem(f)
+				g.d.Display()
+			}
+		}
+		k := g.menuFocus
+		switch {
+		case in.Pressed(hal.PadB) && g.OnExit != nil, in.Pressed(hal.PadA|hal.PadOK) && k == 2+len(levels):
+			g.OnExit()
+			return true
+		case in.Pressed(hal.PadA|hal.PadOK) && k < 2:
+			g.humanBlack = k == 0
+			g.drawMenuItem(0)
+			g.drawMenuItem(1)
+			g.d.Display()
+		case in.Pressed(hal.PadA | hal.PadOK):
+			g.level = k - 2
+			g.start()
+			return true
+		}
+		return false
+	}
+
+	if d := in.Direction(); d != 0 {
+		var boxes [66]pad.Box
+		for sq := 0; sq < 64; sq++ {
+			r := g.l.squareRect(sq)
+			boxes[sq] = pad.Box{X: r.x, Y: r.y, W: r.w, H: r.h}
+		}
+		for k, r := range [2]rect{g.l.undo, g.l.new} {
+			boxes[focusUndo+k] = pad.Box{X: r.x, Y: r.y, W: r.w, H: r.h}
+		}
+		g.focus = pad.Move(boxes[:], g.focus, d)
+	}
+	switch {
+	case in.Pressed(hal.PadA|hal.PadOK) && g.focus == focusNew:
+		g.DrawMenu()
+		return true
+	case in.Pressed(hal.PadA|hal.PadOK) && g.focus == focusUndo, in.Pressed(hal.PadX):
+		if g.phase == humanTurn || g.phase == gameOver {
+			g.undo()
+		}
+	case in.Pressed(hal.PadA | hal.PadOK):
+		if sq := g.focus; g.phase == humanTurn && g.pos.Moves()&(1<<sq) != 0 {
+			g.history = append(g.history, snapshot{g.pos, g.blackMove, g.last})
+			g.play(sq)
+		}
+	}
+	if first || g.focus != g.drawnFocus {
+		g.drawButtons()
+		g.refresh()
+	}
+	return false
 }
 
 func (g *Game) tapMenu(x, y int16) {
@@ -396,9 +519,15 @@ func (g *Game) undo() {
 	g.nextTurn()
 }
 
-// Update reads the touch panel and advances the game by dt seconds.
+// Update reads the touch panel and the controller and advances the game
+// by dt seconds.
 func (g *Game) Update(dt float32) {
 	g.clock += dt
+	used := g.in.Used
+	g.in.Update(g.Pad, dt)
+	if g.phase == menu && g.in.Used && g.updatePad(!used) {
+		return
+	}
 	x, y, pressed := g.t.ReadTouch()
 	tap := pressed && !g.wasTouch && g.clock-g.lastTap >= tapGap
 	g.wasTouch = pressed
@@ -410,6 +539,9 @@ func (g *Game) Update(dt float32) {
 		if tap {
 			g.tapMenu(x, y)
 		}
+		return
+	}
+	if g.in.Used && g.updatePad(!used) {
 		return
 	}
 	if tap {
@@ -471,7 +603,7 @@ func (g *Game) look(sq int) sqLook {
 	if !g.blackMove {
 		blackBB, whiteBB = whiteBB, blackBB
 	}
-	l := sqLook{last: sq == g.last}
+	l := sqLook{last: sq == g.last, cursor: g.in.Used && sq == g.focus}
 	switch {
 	case blackBB&bit != 0:
 		l.stone = black
@@ -499,6 +631,9 @@ func (g *Game) drawSquare(sq int) {
 			tinydraw.FilledCircle(g.d, cx, cy, dotR, hintColor)
 		}
 	}
+	if l.cursor {
+		pad.Frame(g.d, r.x, r.y, r.w, r.h, 2, focusColor)
+	}
 	g.drawn[sq] = l
 }
 
@@ -519,14 +654,24 @@ func (g *Game) drawAll() {
 		g.drawn[sq] = sqLook{stone: -1} // force a redraw
 	}
 	g.drawnPanel = ""
-	for _, b := range []struct {
+	g.drawButtons()
+	g.refresh()
+}
+
+// drawButtons draws UNDO and NEW, with a frame on the one that has the
+// controller's focus.
+func (g *Game) drawButtons() {
+	for k, b := range []struct {
 		r    rect
 		name string
 	}{{g.l.undo, "UNDO"}, {g.l.new, "NEW"}} {
 		g.fill(b.r, btnColor)
 		g.textCentered(b.r, &proggy.TinySZ8pt7b, b.name, textColor, b.r.h/2+4)
+		if g.in.Used && g.focus == focusUndo+k {
+			pad.Frame(g.d, b.r.x, b.r.y, b.r.w, b.r.h, 2, focusColor)
+		}
 	}
-	g.refresh()
+	g.drawnFocus = g.focus
 }
 
 // refresh redraws the squares that changed (except those waiting for the

@@ -120,6 +120,14 @@ const (
 	PinLight    = 34 // CdS light sensor (ADC)
 )
 
+// Mini joystick module (package minijoy) as a game controller: I2C on
+// connector P4 (GND, 3V3, IO17, IO18), in the module's order. Not checked
+// on the board yet. IO18 is also the microSD slot's SCK.
+const (
+	PinJoySDA = 17
+	PinJoySCL = 18
+)
+
 // Serial console: UART0 (GPIO1 TX / GPIO3 RX) through the CH340C USB-UART.
 const (
 	PinUARTTX = 1
