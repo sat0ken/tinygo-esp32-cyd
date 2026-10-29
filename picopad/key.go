@@ -228,8 +228,13 @@ func (k *keys) Time() uint32 {
 }
 
 // WaitMs waits ms milliseconds, scanning the buttons meanwhile.
-func (k *keys) WaitMs(ms int) {
-	end := k.Clock.Now() + time.Duration(ms)*time.Millisecond
+func (k *keys) WaitMs(ms int) { k.wait(time.Duration(ms) * time.Millisecond) }
+
+// WaitUs waits us microseconds, scanning the buttons meanwhile.
+func (k *keys) WaitUs(us int) { k.wait(time.Duration(us) * time.Microsecond) }
+
+func (k *keys) wait(d time.Duration) {
+	end := k.Clock.Now() + d
 	for {
 		k.scan()
 		rest := end - k.Clock.Now()

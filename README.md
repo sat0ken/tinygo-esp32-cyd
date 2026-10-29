@@ -90,6 +90,21 @@ make wasm PKG=./cmd/games && make serve   # ブラウザ
 | 16_maze | 同じく PicoLibSDK の迷路（[games/maze](games/maze/maze.go)）。矢印で顔を動かして出口を探す。見えるのは通った道の周りだけ。A で出口が一瞬見える。出口に着くと迷路全体が見え、ボタンで次の迷路。Y でやめる。ジョイスティックがなければ 3×3 のタッチのボタン（[PicoPad のゲーム](#picopad-のゲーム)）。wasm でも動く | 顔が動く・壁で止まる、通った所が見えていく |
 | 17_fifteen | 同じく PicoLibSDK の 15 パズル（[games/fifteen](games/fifteen/fifteen.go)）。矢印でタイルを穴に動かして 1〜15 に並べる。A で混ぜ直し、X で自動で解く（ボタンで止まる）、Y でやめる。揃うと点滅し、ボタンで次のゲーム。ジョイスティックがなければ 3×3 のタッチのボタン（[PicoPad のゲーム](#picopad-のゲーム)）。wasm でも動く | タイルが動く、X で最後まで解ける |
 | 18_life | 同じく PicoLibSDK のライフゲーム（[games/life](games/life/life.go)）。50×50 の世界（端はつながる）の中央 20×15 を表示。矢印でカーソル、A でセルを反転、B で動かす（ボタンで止めると動かす前に戻る）、X で次のスロット（グライダー銃などの模様が入っている 10 個）、Y でやめる。ジョイスティックがなければ 3×3 のタッチのボタン（[PicoPad のゲーム](#picopad-のゲーム)）。wasm でも動く | セルが反転する、B で動く・止めると戻る |
+| 19_tvtennis | 同じく PicoLibSDK のテニス（[games/tvtennis](games/tvtennis/tvtennis.go)）。最初の画面で LEFT/RIGHT が片方のパドルで CPU と対戦、DOWN が2人、UP がデモ、A が両方のパドルを1人で。UP/DOWN が左のパドル、X/A が右のパドル、LEFT/RIGHT/B でサーブ、Y で最初の画面へ（そこで Y でやめる）。wasm でも動く | パドルが動く、ボールが跳ね返る・点が入る |
+| 20_atoms | 同じく PicoLibSDK の原子の陣取り（[games/atoms](games/atoms/atoms.go)）。最大5人（人か CPU）が 10×10 の盤に順に原子を置き、隣の数だけたまると爆発して隣を取る。最初の画面で LEFT・UP・RIGHT・DOWN・B が各プレイヤーの種類、A で開始。矢印でカーソル、A で置く、Y で最初の画面へ（そこで Y でやめる）。全員 CPU ならデモ。wasm でも動く | 原子が置ける・爆発して隣を取る、CPU が打つ |
+| 21_chess | 同じく PicoLibSDK のチェス（[games/chess](games/chess/chess.go)）。最初の画面で LEFT が白で CPU と対戦、RIGHT が黒、DOWN が2人、UP がデモ、A が強さ（2〜5 手先まで読む）。矢印でカーソル、A で駒を持ち上げて置く、B で戻す、X で CPU に指させる、Y でやめる。C のとおりキャスリングの表示位置がずれ、ポーンは必ずクイーンになる。wasm でも動く | 駒が動かせる、CPU が指す |
+| 22_eggs | 同じく PicoLibSDK のリバーシ風のゲーム（[games/eggs](games/eggs/eggs.go)）。ひよこを置いて、ひよこで終わる列を返す（プレイヤー1はめんどり→ひよこ→卵、プレイヤー2は卵→ひよこ→めんどり）。最初の画面で LEFT が卵で CPU と対戦、RIGHT がめんどり、DOWN が2人、UP がデモ。矢印でカーソル、A で置く、X で CPU の手を見る、Y でやめる。wasm でも動く | 置ける所に印、列が返る、CPU が打つ |
+| 23_train | 同じく PicoLibSDK の列車のパズル（[games/train](games/train/train.go)）。盤の物を全部集めると門が開き、門から出ると次の面（全 50 面、面ごとのパスワード付き）。集めた物は貨車になって後ろにつながり、壁や自分にぶつかると最初から。矢印で進む向き、A でパスワード入力、X で解答を見る、Y でやり直し（動く前はデモに戻る）。デモ中はキーで始まり、Y を押したままでやめる。wasm でも動く | 列車が物を集めて貨車が伸びる、門が開く、全 50 面の解答で門に着く |
+| 24_picoinvaders | 同じく PicoLibSDK のスペースインベーダー（[games/picoinvaders](games/picoinvaders/invaders.go)、08_invaders とは別物）。55 匹の編隊が左右に動きながら下りてくる。LEFT/RIGHT で砲台、A で撃つ。家（トーチカ）は弾で少しずつ欠ける。ときどき母船（1000 点）。全滅させると次の面、Y でやめる。wasm でも動く | 撃つと 10〜30 点、家が欠ける、全滅で LEVEL UP、GAME OVER のあとキーで新しいゲーム |
+| 25_pacman | 同じく PicoLibSDK のパックマン（[games/pacman](games/pacman/pacman.go)）。最初の画面でゴーストの紹介のあと（約 20 秒、Y でやめる）ゲームが始まる。矢印で進む向き、A で一時停止、Y で最初の画面へ。4 匹のゴーストは追いかけ方がそれぞれ違い、パワーエサで青くなる（食べると 200〜1600 点）、フルーツ、10000 点で 1 機増える。毎フレーム画面全体を描き直す。wasm でも動く | ゴーストの動きが C の元のソースと 4,000 フレーム同じ |
+| 26_sokoban | 同じく PicoLibSDK の倉庫番（[games/sokoban](games/sokoban/sokoban.go)）。自由に配布してよいと明記された 7 人の作者の 37 集・2,020 面（解答付き）。デモのあと作者・集・面を矢印で選び、A で決定、Y で戻る。ゲーム中は矢印で動く、X で解答を見る、B でやり直し、A+RIGHT/LEFT で次/前の面、A+UP/DOWN で速い/遅い動き。面の大きさでタイルが 4〜32 ピクセルに変わる。wasm でも動く | 全 2,020 面の解答で全面クリア |
+| 27_vegaslot | 同じく PicoLibSDK のスロットマシン（[games/vegaslot](games/vegaslot/vegaslot.go)）。3 つのリールの当たりの線に同じ絵柄が 3 つで当たり。A で回す、X でオート、B で賭け（線の数、6 はハイゲーム）、LEFT で偶数・奇数のトス、UP でクレジット 10 追加、DOWN でバンクからクレジットへ。当たりのあとは LEFT/RIGHT でバンク/クレジットへ、A でリスク（倍か半分）。256 色の画像が 3 枚と影があり、フレームバッファのパレットが足りない分は近い色になる。wasm でも動く | 回すとクレジットが減る、当たりの抽選が C の元のソースと 3,000 回同じ、還元率 94% |
+| 28_raptor | 同じく PicoLibSDK の縦スクロールのシューティング（[games/raptor](games/raptor/raptor.go)）。矢印で自機、A で撃つ、B で武器を選ぶ。点が増えると面が上がり、武器が増える（緑と銀のロケット、レーザー、散弾、敵を追うソナー爆弾、敵と弾を吸うブラックホール）。エネルギーがなくなるとシールドが 1 つ減る。シールドがなくなると自機は燃えたまま（C と同じく Y でやめる）。地上に機体の影が落ちる。wasm でも動く | 敵・弾の動きが C の元のソースと 10,000 フレーム同じ |
+| 29_ants | 同じく PicoLibSDK のカードゲーム（[games/ants](games/ants/ants.go)）。黒アリと赤アリが資源（レンガ・武器・クリスタル）でカードを使い、城を 100 まで建てるか相手の城を壊すと勝ち。最初の画面で 2 人・CPU と対戦（黒か赤）・CPU 同士を選ぶ。ゲーム中は LEFT/RIGHT でカード、A で使う、B で捨てる、X で CPU のおすすめ、Y で戻る。USB で PicoPad 2 台をつなぐ対戦はない。wasm でも動く | CPU 同士の対戦が C の元のソースと 2,000 手同じ |
+| 30_ghostrac | 同じく PicoLibSDK のカーレース（[games/ghostrac](games/ghostrac/ghostrac.go)）。コースを斜め上から見た透視図で描き、UP か X で加速、DOWN か A でブレーキ、LEFT/RIGHT で曲がる。スタートから 3 つのチェックポイントを通って 1 周。一番速かった周を「ゴースト」の車がもう一度走る。wasm でも動く | 地面の透視図と車が元の写真と全ピクセル同じ |
+| 31_fifteen2 | 同じく PicoLibSDK の絵の 15 パズル（[games/fifteen2](games/fifteen2/fifteen2.go)）。17_fifteen と同じパズルを、数字と 13 枚の絵（子猫・子犬・ペガサス・不死鳥など）から選んで遊ぶ。UP/DOWN で絵、A で始める。ゲーム中は矢印で動かす、A で番号を出す、X でソルバー、Y で絵の選択へ。絵の出どころは元のソースに書かれていない。wasm でも動く | ソルバーで完成すると絵が全部そろう |
+| 32_pictor | 同じく PicoLibSDK の横スクロールのシューティング Pictor（[games/pictor](games/pictor/pictor.go)）。バラが 12 の場面を走りながら PicoPad の部品を集める。場面ごとに仲間が増え、B/X でその姿に変わる（武器が変わる）。矢印で動く（歩く仲間は UP でジャンプ）、A で撃つ、Y でメニュー。元の映画のキャラクターの絵 5 つはこちらで描いたドット絵に差し替えた。点の記録は RAM だけ。wasm でも動く | 草原の場面で撃っている |
+| 33_zoom | 同じく PicoLibSDK の ZOOM を Gate Runner という名前にしたもの（[games/zoom](games/zoom/zoom.go)）。惑星の上を低く飛び、柱 2 本のゲートをくぐり、円盤を撃つ。セクターごとに 4 つの区域（最後は宇宙で母艦が出る）。LEFT/RIGHT で動く、UP/DOWN で速さ、A で撃つ、Y で終わり。元は 1984 年のアーケードゲームの DOS 版をもとにしたもので、その題字と絵を全部こちらで描いたドット絵に替えた。wasm でも動く | ゲートをくぐって飛んでいる |
 
 02_colorbars はシリアルから1文字コマンドを受け付ける：
 `c` カラーバー、`r`/`g`/`b`/`w`/`k` 単色（赤/緑/青/白/黒）、`d` レジスタを再ダンプ。
@@ -247,13 +262,13 @@ cmd/games と 08〜14 は、起動時にモジュールを探し（`platform.Ini
 
 ## PicoPad のゲーム
 
-[PicoLibSDK](https://github.com/Panda381/PicoLibSDK) は PicoPad（RP2040、320×240 の液晶、十字キーと A・B・X・Y）の C の SDK で、ゲームのサンプルが付いている（`PicoPad/GAME/`。作者の自作分は Unlicense）。[picopad](picopad/picopad.go) パッケージは、そのゲームが使う SDK の関数を同じ名前・同じ引数で持つ。C のゲームを関数ごとに Go に書き換えれば、ゲームのループもそのまま動く。移植したのはテトリス（[games/tetris](games/tetris/tetris.go)、15_tetris）、迷路（[games/maze](games/maze/maze.go)、16_maze）、15 パズル（[games/fifteen](games/fifteen/fifteen.go)、17_fifteen）、ライフゲーム（[games/life](games/life/life.go)、18_life）。
+[PicoLibSDK](https://github.com/Panda381/PicoLibSDK) は PicoPad（RP2040、320×240 の液晶、十字キーと A・B・X・Y）の C の SDK で、ゲームのサンプルが付いている（`PicoPad/GAME/`。作者の自作分は Unlicense）。[picopad](picopad/picopad.go) パッケージは、そのゲームが使う SDK の関数を同じ名前・同じ引数で持つ。C のゲームを関数ごとに Go に書き換えれば、ゲームのループもそのまま動く。移植したゲームは [examples](#examples) の表の 15 以降（`games/<名前>`）。
 
 ```sh
 make flash-s028 PKG=./examples/15_tetris    # ESP32-2432S028R（画面がちょうど 320×240）
 make flash-s035 PKG=./examples/15_tetris    # ESP32-3248S035C（中央の 320×240）
 make wasm PKG=./examples/15_tetris && make serve
-make flash-s028 PKG=./examples/16_maze      # 迷路、15 パズル（17_fifteen）、ライフゲーム（18_life）も同じ
+make flash-s028 PKG=./examples/16_maze      # ほかのゲームも同じ（16_maze、17_fifteen …）
 ```
 
 | PicoPad | この基板 |
@@ -262,13 +277,14 @@ make flash-s028 PKG=./examples/16_maze      # 迷路、15 パズル（17_fifteen
 | A・B・X・Y | ジョイスティックの A・B・X・Y（押し込みも A。ブラウザでは Z・X・A・S） |
 | （ボタンだけ） | タッチ：画面を 3×3 に分けて、上・左・右・下の真ん中が十字キー、中央と右下が A、左下が B、右上が X、左上が Y |
 
-- PicoPad のフレームバッファは 16bit（150KB）。ESP32（PSRAM なし）でこれを持つと、ヒープが約 37KB しか残らない（TinyGo 0.44 のビルドで確認）。そこで 8bit のパレット番号（75KB）で持ち、`DispUpdate` が変わった範囲を 8 行ずつ RGB565 に直して送る（ESP32 では DMA）。色には最初に描かれたときに番号を付け、256 色を超えたら一番近い色にする。テトリスは 80 色。
-- RAM：ESP32-2432S028R で起動直後のヒープ約 186KB のうち、フレームバッファ 75KB と送信用のバッファ 10KB を使う（15〜17。18_life はゲームの分の 30KB も使い、残りは約 60KB。ESP32-4827S043 では起動直後のヒープ約 130KB のうち約 127KB を使うので、残りは約 5KB しかない）。
+- PicoPad のフレームバッファは 16bit（150KB）。ESP32（PSRAM なし）でこれを持つと、ヒープが約 37KB しか残らない（TinyGo 0.44 のビルドで確認）。そこで 8bit のパレット番号（75KB）で持ち、`DispUpdate` が変わった範囲を 8 行ずつ RGB565 に直して送る（ESP32 では DMA）。色には最初に描かれたときに番号を付け、256 色を超えたら一番近い色にする。テトリスは 80 色。256 色を超えるゲーム（スロットマシン・カードゲーム・カーレース・絵の 15 パズル）は、後から描く部分が近い色になる（並べて見ても分からない程度から、少しくすむ程度まで）。
+- RAM：ESP32-2432S028R で起動直後のヒープ約 186KB のうち、フレームバッファ 75KB と送信用のバッファ 10KB を使う（ほかにゲームが使う分。18_life はゲームの分の 30KB も使い、残りは約 60KB。ESP32-4827S043 では起動直後のヒープ約 130KB のうち約 127KB を使うので、残りは約 5KB しかない）。
 - 画像とフォントは、PicoLibSDK の C の配列（`img/*.cpp`、`_font/*.c`）を [tools/picoimg](tools/picoimg/main.go) で Go の文字列定数にしたもの（フラッシュに置かれる）。作り直すときは PicoLibSDK を取ってきて `PICOLIBSDK=~/PicoLibSDK go generate ./picopad ./games/...`。
 - 元のゲームの画面写真と比べた：テトリスはゴールデン画像（`tetris_start`）の動かない部分（壁・枠・題字・統計のブロック）が `TETRIS.PNG` と1ピクセルも違わない。迷路は `MAZE.PNG` の 8×8 のマス 1,131 個、15 パズルは `FIFTEEN.PNG` の 48×48 のマス 16 個、ライフゲームは `LIFE.PNG` の 16×16 のマス 300 個がどれも、こちらで描いたタイルのどれかと1ピクセルも違わない。
 - 音はまだない（C の `PLAYSOUND` はコメントにしてある）。`ResetToBootLoader`（PicoPad では SD カードのメニューに戻る）は `Run` から戻ること。cmd/games（ランチャー）にはまだ入れていない。
 - 迷路のメインループは C のとおり待たずに回り、100 周ごとに画面全体を描き直す（同じ絵を送り続けるが、見た目は変わらない）。
 - 15 パズルの X は、C と同じ探索で解く（タイルの組ごとに、近づける探索と揃える探索を交互に、届かなければ深くして）。探索の間はボタンも画面も止まる（PicoPad と同じ）。ブラウザでは 30 秒以内に解けた。
+- `PicoPad/GAME/` の 21 本のうち 19 本を移植した（15〜33）。FLAPPY は他社のゲームの絵と面が入っているので、MULTISET は同じゲームのまとめなので入れていない。PICTOR は映画のキャラクターの絵を、ZOOM はもとにしたアーケードゲームの題字と絵を全部、こちらで描いたドット絵に替えた（ZOOM は名前も Gate Runner にした）。倉庫番は配布の条件がはっきりした作者の面だけ。
 - 仕組みと、ほかのゲームを移植するときの手順は [docs/ARCHITECTURE.md 17章](docs/ARCHITECTURE.md#17-picopad-のゲームの移植picopad15)。
 
 ## ブラウザ（wasm）で動かす
@@ -376,4 +392,4 @@ wasm 版やホストのテストで問題がなくても、次は実機で確認
 - フェーズ8：VSYNC は割り込みではなくポーリング（`WaitVSync`）。割り込み版は未実装。
 - フェーズ10：メモリ節約モード（8bit パレット + バウンスバッファ）は未実装。
 - タッチのキャリブレーション値は1台の実測値。個体差があるので、ずれる場合は 04_touch で測り直す。
-- PicoPad のゲーム：音、ランチャーへの追加、ほかのゲームの移植（docs/ARCHITECTURE.md 17章）。15〜18 は実機では未確認。
+- PicoPad のゲーム：音、ランチャーへの追加。FLAPPY（他社のゲームの絵と面が入っている）と MULTISET（まとめ）は移植していない（docs/ARCHITECTURE.md 17章）。PICTOR の点の記録は RAM だけ（SD カードに保存しない）。15 以降は実機では未確認。

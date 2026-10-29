@@ -1,6 +1,7 @@
 package picopad
 
 import (
+	"math"
 	"testing"
 	"time"
 
@@ -69,6 +70,174 @@ func TestDrawImgPal(t *testing.T) {
 	}
 }
 
+func TestDrawGetPoint(t *testing.T) {
+	c, _, _, _ := newTest(t, Width, Height)
+	orange := RGB(255, 128, 0)
+	c.DrawRect(10, 10, 2, 2, orange)
+	c.DrawPoint(11, 11, ColWhite)
+	for _, tc := range []struct {
+		x, y int
+		want Color
+	}{
+		{10, 10, orange}, {11, 10, orange}, {11, 11, ColWhite}, {12, 10, ColBlack}, {-1, 10, ColBlack}, {Width, 0, ColBlack},
+	} {
+		if got := c.DrawGetPoint(tc.x, tc.y); got != tc.want {
+			t.Errorf("DrawGetPoint(%d, %d) = %#04x, want %#04x", tc.x, tc.y, got, tc.want)
+		}
+	}
+}
+
+func TestShadow(t *testing.T) {
+	for _, tc := range []struct {
+		col  Color
+		shad uint8
+		want Color
+	}{
+		{ColWhite, 15, 0xD71A}, {ColWhite, 8, 0x7BEF}, {ColWhite, 1, 0x0861}, {ColWhite, 0, ColBlack}, {RGB(255, 128, 0), 8, 0x7A00},
+	} {
+		if got := Shadow(tc.col, tc.shad); got != tc.want {
+			t.Errorf("Shadow(%#04x, %d) = %#04x, want %#04x", tc.col, tc.shad, got, tc.want)
+		}
+	}
+
+	c, _, _, _ := newTest(t, Width, Height)
+	c.DrawRect(0, 0, 8, 2, ColWhite)
+	c.DrawRect(8, 0, 8, 2, ColRed)
+	c.DrawRectShadow(4, 0, 8, 1, 8)
+	// a 1-bit image 16 wide: 0xF0 0x0F
+	c.DrawBlit1Shadow("\xf0\x0f", 0, 0, 0, 1, 16, 1, 16, 1)
+	for _, tc := range []struct {
+		x, y int
+		want Color
+	}{
+		{3, 0, ColWhite}, {4, 0, 0x7BEF}, {11, 0, Shadow(ColRed, 8)}, {12, 0, ColRed},
+		{0, 1, 0x0861}, {4, 1, ColWhite}, {11, 1, ColRed}, {12, 1, Shadow(ColRed, 1)},
+	} {
+		if got := c.DrawGetPoint(tc.x, tc.y); got != tc.want {
+			t.Errorf("pixel %d, %d = %#04x, want %#04x", tc.x, tc.y, got, tc.want)
+		}
+	}
+}
+
+func TestSaveRect(t *testing.T) {
+	c, _, _, _ := newTest(t, Width, Height)
+	c.DrawRect(Width-4, 0, 4, 2, ColRed)
+	c.DrawPoint(Width-1, 1, ColWhite)
+	buf := make([]uint8, 8*2)
+	c.SaveRect(buf, Width-4, 0, 8, 2) // half out of the screen
+	c.DrawRect(Width-4, 0, 4, 2, ColGreen)
+	c.RestoreRect(buf, Width-4, 0, 8, 2)
+	if a, b := c.DrawGetPoint(Width-4, 0), c.DrawGetPoint(Width-1, 1); a != ColRed || b != ColWhite {
+		t.Errorf("restored %#04x %#04x", a, b)
+	}
+	c.SaveRect(buf, -2, -1, 8, 2) // only the pixels on the screen
+	c.RestoreRect(buf, -2, -1, 8, 2)
+}
+
+func TestDrawImg4PalMat(t *testing.T) {
+	c, _, _, _ := newTest(t, Width, Height)
+	pal := palette(ColBlack, ColRed, ColGreen, ColBlue)
+	// 4 x 2 pixels: 1 2 3 0 / 3 0 1 2
+	img := "\x12\x30" + "\x30\x12"
+	var m Mat2D
+	m.PrepDrawImg(4, 2, 2, 1, 4, 2, 0, 0, 0, 0, 0) // the same size
+	c.DrawImg4PalMat(img, pal, 4, 2, 10, 10, 4, 2, &m, DrawImgTransp, ColBlack)
+	c.DrawImg4Pal(img, pal, 0, 0, 10, 20, 4, 2, 4)
+	m.PrepDrawImg(4, 2, 2, 1, 8, 4, 0, 0, 0, 0, 0) // twice the size
+	c.DrawImg4PalMat(img, pal, 4, 2, 10, 30, 8, 4, &m, DrawImgNoBorder, 0)
+	m.PrepDrawImg(4, 2, 2, 1, 4, 2, 0, 0, math.Pi, 0, 0) // turned around
+	c.DrawImg4PalMat(img, pal, 4, 2, 20, 10, 4, 2, &m, DrawImgColor, ColWhite)
+	for y := 0; y < 2; y++ {
+		for x := 0; x < 4; x++ {
+			want := c.DrawGetPoint(10+x, 20+y) // black is transparent: the black screen
+			if got := c.DrawGetPoint(10+x, 10+y); got != want {
+				t.Errorf("same size %d,%d: %#04x, want %#04x", x, y, got, want)
+			}
+			for _, p := range [][2]int{{10 + 2*x, 30 + 2*y}, {11 + 2*x, 31 + 2*y}} {
+				if got := c.DrawGetPoint(p[0], p[1]); got != want {
+					t.Errorf("twice %d,%d: %#04x, want %#04x", x, y, got, want)
+				}
+			}
+		}
+	}
+	// turned by 180 degrees about the point 2,1: the source x is 2-x0, y
+	// 1-y0 (x0 -2..1, y0 -1..0), out of the image white; sin(float32(pi))
+	// is a little below 0, so m21 is -1/4096 and the last pixels of the
+	// rows go a row up, as in the SDK
+	for x, want := range []Color{ColWhite, ColWhite, ColWhite, ColBlack, ColWhite, ColGreen, ColRed, ColGreen} {
+		if got := c.DrawGetPoint(20+x%4, 10+x/4); got != want {
+			t.Errorf("turned %d,%d: %#04x, want %#04x", x%4, x/4, got, want)
+		}
+	}
+}
+
+func TestDrawTile4PalMap(t *testing.T) {
+	c, _, _, _ := newTest(t, Width, Height)
+	pal := palette(ColBlack, ColRed, ColGreen, ColBlue)
+	// 2 tiles of 2x2 pixels: tile 0 all red (1), tile 1 all blue (3)
+	tiles := "\x11\x11" + "\x33\x33"
+	// a map of 2x2 tiles: 0 1 / 1 0
+	tilemap := "\x00\x01\x01\x00"
+	var m Mat2D
+	m.PrepDrawImg(4, 4, 2, 2, 4, 4, 0, 0, 0, 0, 0) // the map 1:1, its middle in the middle
+	c.DrawTile4PalMap(tiles, pal, tilemap, 1, 1, 1, 0, 0, 4, 4, &m, 0)
+	for _, tc := range []struct {
+		x, y int
+		want Color
+	}{
+		{0, 0, ColRed}, {1, 1, ColRed}, {2, 0, ColBlue}, {3, 1, ColBlue}, {0, 2, ColBlue}, {2, 2, ColRed}, {3, 3, ColRed},
+	} {
+		if got := c.DrawGetPoint(tc.x, tc.y); got != tc.want {
+			t.Errorf("pixel %d,%d: %#04x, want %#04x", tc.x, tc.y, got, tc.want)
+		}
+	}
+}
+
+func TestSetPalette(t *testing.T) {
+	c, _, _, _ := newTest(t, Width, Height)
+	c.SetPalette(palette(ColBlack, ColRed, ColBlue, ColWhite))
+	c.DrawRect(0, 0, 1, 1, RGB(250, 10, 10)) // 4 entries only: a new one
+	if a := c.DrawGetPoint(0, 0); a != RGB(250, 10, 10) {
+		t.Errorf("4 entries: %#04x", a)
+	}
+	full := make([]Color, 256)
+	for i := range full {
+		full[i] = ColBlack
+	}
+	full[1], full[2] = ColRed, ColWhite
+	c.SetPalette(palette(full...))
+	c.DrawRect(0, 0, 1, 1, RGB(200, 20, 0)) // the palette is full: the nearest
+	c.DrawRect(1, 0, 1, 1, RGB(200, 20, 0))
+	if a := c.DrawGetPoint(0, 0); a != ColRed {
+		t.Errorf("full: %#04x", a)
+	}
+	c.MapRect(0, 0, 1, 1, func(col Color) Color { return col | 0x07FF })
+	if a, b := c.DrawGetPoint(0, 0), c.DrawGetPoint(1, 0); a != ColWhite || b != ColRed {
+		t.Errorf("MapRect: %#04x %#04x", a, b)
+	}
+}
+
+func TestDrawImgPalDbl(t *testing.T) {
+	c, _, _, _ := newTest(t, Width, Height)
+	pal := palette(ColBlack, ColRed, ColBlue, ColWhite)
+	// 2 x 2: red blue / white black, drawn 4 x 4 from x 0 (the row wraps)
+	c.DrawImgPalDbl("\x01\x02\x03\x00", pal, 0, 0, 0, 0, 4, 4, 4)
+	for _, tc := range []struct {
+		x, y int
+		want Color
+	}{
+		{1, 0, ColRed}, {3, 0, ColBlue},
+		{0, 0, blend2(ColBlue, ColRed)}, {2, 0, blend2(ColRed, ColBlue)},
+		{1, 1, blend2(ColRed, ColWhite)}, {3, 1, blend2(ColBlue, ColBlack)},
+		{0, 1, blend4(ColBlue, ColRed, ColBlack, ColWhite)},
+		{1, 2, ColWhite}, {3, 3, ColBlack}, // the last line is not blended
+	} {
+		if got := c.DrawGetPoint(tc.x, tc.y); got != tc.want {
+			t.Errorf("pixel %d,%d: %#04x, want %#04x", tc.x, tc.y, got, tc.want)
+		}
+	}
+}
+
 func TestDrawImg4Pal(t *testing.T) {
 	c, d, _, _ := newTest(t, Width, Height)
 	pal := palette(ColBlack, ColRed, ColGreen, ColBlue)
@@ -92,29 +261,74 @@ func TestDrawImg4Pal(t *testing.T) {
 	}
 }
 
-func TestDrawText(t *testing.T) {
+func TestDrawImgRle(t *testing.T) {
 	c, d, _, _ := newTest(t, Width, Height)
-	c.DrawRect(0, 0, 40, 20, ColBlue)
-	c.DrawText("A", 2, 3, ColYellow)
-	c.DrawTextBg("AB", 10, 3, ColWhite, ColRed)
+	pal := palette(ColBlack, ColRed, ColGreen, ColBlue)
+	// 4 x 3 pixels: 1 1 1 1 / 1 2 3 0 / 2 2 2 3
+	// 8 bits: repeat 1 five times (128+2), raw 3 (2), repeat 2 three times
+	// (128+0), raw 1 (0)
+	img8 := "\x82\x01" + "\x02\x02\x03\x00" + "\x80\x02" + "\x00\x03"
+	want := []Color{ColRed, ColRed, ColRed, ColRed, ColRed, ColGreen, ColBlue, ColBlack, ColGreen, ColGreen, ColGreen, ColBlue}
+	c.DrawImgRle(img8, pal, 10, 10, 4, 3)
+	// 4 bits, the same: repeat 1 five times (8+2), raw 3 (2), repeat 2
+	// three times (8+0), raw 1 (0)
+	img4 := "\xa1" + "\x22\x30" + "\x82" + "\x03"
+	c.DrawImg4Rle(img4, pal, 20, 10, 4, 3)
+	// the rows above the screen are skipped
+	c.DrawImgRle(img8, pal, 30, -1, 4, 3)
 	c.DispUpdate()
-	checkGlyph(t, c, d, 'A', 2, 3, ColYellow, ColBlue)
-	checkGlyph(t, c, d, 'A', 10, 3, ColWhite, ColRed)
-	checkGlyph(t, c, d, 'B', 18, 3, ColWhite, ColRed)
+	for i, col := range want {
+		x, y := i%4, i/4
+		if got := at(c, d, 10+x, 10+y); got != col {
+			t.Errorf("DrawImgRle: pixel %d, %d = %#04x, want %#04x", x, y, got, col)
+		}
+		if got := at(c, d, 20+x, 10+y); got != col {
+			t.Errorf("DrawImg4Rle: pixel %d, %d = %#04x, want %#04x", x, y, got, col)
+		}
+		if y > 0 {
+			if got := at(c, d, 30+x, y-1); got != col {
+				t.Errorf("DrawImgRle at -1: pixel %d, %d = %#04x, want %#04x", x, y, got, col)
+			}
+		}
+	}
 }
 
-// checkGlyph checks character ch of the font at x, y.
-func checkGlyph(t *testing.T, c *Console, d *memlcd.Display, ch byte, x, y int, fg, bg Color) {
+func TestDrawText(t *testing.T) {
+	c, d, _, _ := newTest(t, Width, Height)
+	if c.DrawFontWidth() != 8 || c.DrawFontHeight() != 16 {
+		t.Errorf("default font %dx%d, want 8x16 (FontBold8x16)", c.DrawFontWidth(), c.DrawFontHeight())
+	}
+	c.DrawRect(0, 0, 100, 60, ColBlue)
+	c.DrawText("A", 2, 3, ColYellow)
+	c.SelFont8x8()
+	c.DrawTextBg("AB", 10, 3, ColWhite, ColRed)
+	c.SelFont6x8()
+	c.DrawTextBg2("AB", 30, 3, ColWhite, ColRed) // 12 x 16 a character
+	c.DrawTextW("A", 60, 3, ColGreen)
+	c.DrawTextH("A", 80, 3, ColGreen)
+	c.DispUpdate()
+	checkGlyph(t, c, d, FontBold8x16, 'A', 2, 3, 1, 1, ColYellow, ColBlue)
+	checkGlyph(t, c, d, FontBold8x8, 'A', 10, 3, 1, 1, ColWhite, ColRed)
+	checkGlyph(t, c, d, FontBold8x8, 'B', 18, 3, 1, 1, ColWhite, ColRed)
+	checkGlyph(t, c, d, FontCond6x8, 'A', 30, 3, 2, 2, ColWhite, ColRed)
+	checkGlyph(t, c, d, FontCond6x8, 'B', 42, 3, 2, 2, ColWhite, ColRed)
+	checkGlyph(t, c, d, FontCond6x8, 'A', 60, 3, 2, 1, ColGreen, ColBlue)
+	checkGlyph(t, c, d, FontCond6x8, 'A', 80, 3, 1, 2, ColGreen, ColBlue)
+}
+
+// checkGlyph checks character ch of font f at x, y, sx times as wide and
+// sy times as high.
+func checkGlyph(t *testing.T, c *Console, d *memlcd.Display, f Font, ch byte, x, y, sx, sy int, fg, bg Color) {
 	t.Helper()
-	for i := 0; i < 8; i++ {
-		bits := fontBold8x8[i*256+int(ch)]
-		for j := 0; j < 8; j++ {
+	for i := 0; i < f.h*sy; i++ {
+		bits := f.data[i/sy*256+int(ch)]
+		for j := 0; j < f.w*sx; j++ {
 			want := bg
-			if bits&(0x80>>j) != 0 {
+			if bits&(0x80>>(j/sx)) != 0 {
 				want = fg
 			}
 			if got := at(c, d, x+j, y+i); got != want {
-				t.Fatalf("%c: pixel %d, %d = %#04x, want %#04x", ch, j, i, got, want)
+				t.Fatalf("%c at %d, %d: pixel %d, %d = %#04x, want %#04x", ch, x, y, j, i, got, want)
 			}
 		}
 	}
@@ -342,8 +556,23 @@ func TestRand(t *testing.T) {
 		if r := c.RandU16Max(1000); r > 1000 {
 			t.Fatalf("RandU16Max(1000) = %d", r)
 		}
+		if r := c.RandU8MinMax(1, 50); r < 1 || r > 50 {
+			t.Fatalf("RandU8MinMax(1, 50) = %d", r)
+		}
+		if r := c.RandS8MinMax(-10, 10); r < -10 || r > 10 {
+			t.Fatalf("RandS8MinMax(-10, 10) = %d", r)
+		}
+		if r := c.RandS16MinMax(-10, -2); r < -10 || r > -2 {
+			t.Fatalf("RandS16MinMax(-10, -2) = %d", r)
+		}
+		if r := c.RandU16MinMax(100, 200); r < 100 || r > 200 {
+			t.Fatalf("RandU16MinMax(100, 200) = %d", r)
+		}
 		if r := c.RandS16Max(-300); r < -300 || r > 0 {
 			t.Fatalf("RandS16Max(-300) = %d", r)
+		}
+		if r := c.RandFloatMinMax(-2, 3); r < -2 || r >= 3 {
+			t.Fatalf("RandFloatMinMax(-2, 3) = %v", r)
 		}
 	}
 	for v, ok := range seen {

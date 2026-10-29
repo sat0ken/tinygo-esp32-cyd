@@ -37,9 +37,17 @@ func NewClock(tb testing.TB, limit time.Duration) *Clock {
 	return &Clock{Limit: limit, tb: tb}
 }
 
-// At calls f in the first Sleep that reaches t (calls must be added in
-// order).
-func (c *Clock) At(t time.Duration, f func()) { c.at = append(c.at, call{t, f}) }
+// At calls f in the first Sleep that reaches t. Calls for the same time run
+// in the order they were added.
+func (c *Clock) At(t time.Duration, f func()) {
+	i := len(c.at)
+	for i > 0 && c.at[i-1].t > t {
+		i--
+	}
+	c.at = append(c.at, call{})
+	copy(c.at[i+1:], c.at[i:])
+	c.at[i] = call{t, f}
+}
 
 func (c *Clock) Now() time.Duration {
 	c.advance(max(c.Step, time.Microsecond))
