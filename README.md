@@ -199,11 +199,11 @@ make examples-s028                          # この基板で動く全プログ�
 |---|---|---|
 | ESP32-2432S028R | CN1：GND、3.3V、IO27=SDA、IO22=SCL | `make flash-s028 PKG=./examples/joystick_check` |
 | E32R28T | SPI 端子 IO27=SDA・IO18=SCL、拡張端子 3.3V・GND | `make flash-s028 PKG=./examples/joystick_check TAGS=e32r28t` |
-| ESP32-3248S035C | CN1：GND、3.3V、IO21=SDA、IO22=SCL（IO21 が GT911 の INT なら使えない） | `make flash-s035 PKG=./examples/joystick_check` |
+| ESP32-3248S035C | P4：GND、3V3、IO17=SDA、IO18=SCL（モジュールと同じ並び。IO18 は microSD の SCK と共用で、SD とは同時に使えない） | `make flash-s035 PKG=./examples/joystick_check` |
 
 - 起動時のログ：I2C のスキャン結果、全レジスタの値、1回の読み取り時間。そのあと画面にスティックの位置とボタンの状態（押している間は緑）を出し、変化を時刻（ms）付きでログに出す。まとめ読み・リピートスタートでの読み出しは、スティックを斜め以外に倒すかボタンを押したときに比べる（中央で何も押していないと全レジスタが同じ値で、比べても分からないため）。
 
-ESP32-2432S028R（CN1、100kHz）で確かめたこと：
+ESP32-3248S035C の P4 はまだ実機で確かめていない。ESP32-2432S028R（CN1、100kHz）で確かめたこと：
 
 | 項目 | 結果 |
 |---|---|
