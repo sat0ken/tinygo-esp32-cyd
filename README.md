@@ -8,7 +8,7 @@ ESP32-3248S035C（ESP32、3.5インチ 480×320 SPI 液晶、静電容量タッ�
 
 ## 必要なもの
 
-- TinyGo 0.42 以降（`tinygo version`）
+- TinyGo 0.43 以降（`tinygo version`、0.44.0 で確認）。0.42 は ESP32 でゴルーチンのスタックの位置が揃わないことがあり、値を黙って読み違える（docs/ARCHITECTURE.md 15章）
 - Go 1.23 以降（ホストのテスト、`make serve`）
 - 実機に書き込む場合：USB-C ケーブル（CH340C 経由で UART0 に接続される）
 - 任意：Chromium / Google Chrome（`make test-browser`）

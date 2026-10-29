@@ -64,9 +64,7 @@ type kart struct {
 }
 
 // The grid behind the start line, in path points and lanes: the player's
-// place first (the last), then the CPU's. (Two arrays, not an array of
-// structs: on the ESP32, TinyGo 0.42 read a local [4]struct{s, lane
-// float32} indexed by a variable one field off.)
+// place first (the last), then the CPU's.
 var (
 	gridS    = [4]float32{-8, -2, -4, -6}
 	gridLane = [4]float32{1.2, -1.2, 1.2, -1.2}

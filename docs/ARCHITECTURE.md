@@ -757,10 +757,20 @@ ESP32（無印、PSRAM なし）、ST7796（320×480、SPI）、GT911（静電�
   - games/invaders のスプライト（`parseSprite` で文字列から組み立てる）はコンパイル時に実行できず、起動時に回っていた。
   - その結果、invaders より後に初期化される `machine` の `_UART0`（UART0 のレジスタを指す構造体）まで起動時に回され、`.bss`（ゼロ）に置かれた。
   - ESP32 のランタイム（`runtime_esp32.go` の `main`）は、パッケージの初期化より**前**に `machine.InitSerial()` を呼ぶ。このため、空の `_UART0`（レジスタのポインタが nil）を使って止まる。例外の表示も出ない。
-- **見分け方**：`go tool nm <elf> | grep machine._UART0` が `d`（.data）なら正常、`b`（.bss）なら起動時に止まる。`make examples-s035` が全プログラムでこれを確かめる。
+- **見分け方**：`go tool nm <elf> | grep machine._UART0` が `d`（.data）なら正常、`b`（.bss）なら起動時に止まる。`make examples-s035` が全プログラムでこれを確かめる。TinyGo 0.44.0 でも `machine.InitSerial()` はパッケージの初期化より前のまま。
 - **対策**：ライブラリのパッケージに、起動時に組み立てる大域変数を置かない。invaders のスプライトは文字列のまま持ち、最初の `NewGame` で組み立てる（[sprites.go](../games/invaders/sprites.go)）。main パッケージの初期化は最後に実行されるので影響しない。
 - **調べ方**：TinyGo の `src/runtime/runtime_esp32.go` の写しを作り、`runtime.main` の各段階で UART0 の FIFO に1文字ずつ書いて（`TINYGOROOT` を写しに向けてビルド）、どこまで進むかを見た。クロックを上げてから UART を設定し直すまでは 230400bps で出力される（APB が 80MHz になり、分周比は ROM の 40MHz 用のまま）ので、モニタを 230400bps にすると読める。
 - 途中で疑った「`.data` の大きさ」「フラッシュ 80MHz の読み出し」「コードの2ページ目の MMU」は、どれも原因ではなかった（2ページ目の割り当ては正しいことを実機で確認）。
+
+### 値を黙って読み違えた原因：ゴルーチンのスタックの位置が揃わない（TinyGo 0.42）
+
+- **症状**：カートのスタート位置（関数の中の `[4]struct{s, lane float32}` をループで読む）が、実機でだけ1フィールドずれて読まれ、自分のカートが芝生から始まった。ホストでは正しい。例外も表示も出ない。
+- **原因**：
+  - ゴルーチンのスタック（`main` も）はヒープから取る。最初のスタックポインタは「確保した先頭 ＋ スタックの大きさ」。
+  - ヒープは `_heap_start` から 16 バイトずつのブロックで、TinyGo 0.42 の `targets/esp32.ld` は `_heap_start = _edata;`（4 バイト単位）。`.data` の大きさしだいで、全ゴルーチンのスタックポインタが 16 の倍数から 4 ずれる。
+  - Xtensa の ABI ではスタックポインタは 16 の倍数なので、LLVM はそれを前提に `align 8` の配列の「先頭 ＋ 4」を「先頭 OR 4」で計算する。ずれていると OR では 4 が足されず、`lane` の位置から `s` を、`s` の位置からその前の 4 バイトを読む。
+- **見つけ方**：IR は正しく、機械語（Capstone 6 で逆アセンブル）に `or a4, a9, a8`（a8 = 4）があった。スタックポインタは `device.AsmFull("mov {}, a1", nil)` で読める。`llvm-readelf -s x.elf | grep _heap_start` が 16 の倍数でなければ危ない。
+- **現状**：TinyGo 0.43.0 から `_heap_start = ALIGN(_edata, 16);`（#5789）。このリポジトリは 0.43 以降を前提にする（README）。ただし 0.44.0 でも、`-stack-size` を 16 の倍数以外にすると同じことが起きる（実機で確認）。スタックの大きさは指定しないか、16 の倍数にする。TinyGo への報告文はリポジトリ直下の `tinygo-esp32-stack-alignment-issue.md`（コミットしていない）。
 
 ### フォントはフラッシュに置く（romfont）
 
