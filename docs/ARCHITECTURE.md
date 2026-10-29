@@ -801,7 +801,7 @@ ESP32（PSRAM なし）、ILI9341（240×320、SPI）、XPT2046（抵抗膜タ�
 | 液晶 | ST7796、480×320 | ILI9341、320×240（`spilcd.InitILI9341`） |
 | タッチ | GT911（I2C） | XPT2046（S043 と同じ [xpttouch](../xpttouch/xpttouch.go)、ピンは CLK 25・MOSI 32・MISO 39・CS 33・IRQ 36） |
 | `platform.Init()` | 中央の 480×272 の窓 | 画面全体の 320×240 |
-| 動くプログラム | 03、07〜17、cmd/app、cmd/games | s028_check、08〜17、cmd/app、cmd/games |
+| 動くプログラム | 03、07〜18、cmd/app、cmd/games | s028_check、08〜18、cmd/app、cmd/games |
 
 - 480×272 の窓には入らないので、ゲームとお絵描きアプリは画面の大きさから配置を選ぶ。各ゲームの `layout` 構造体と `layoutFor(w, h)`（`NewGame` が `d.Size()` で呼ぶ）が、480×272 以上なら元の値（ゴールデン画像は変わらない）、それより小さければ 320×240 用の値を返す。テストは両方の大きさで動かし、`TestLayout` などが画面からはみ出さないこと・押せる所が重ならないこと・文字が収まることを確かめる（320×240 のゴールデン画像は `*_small_*`）。[app](../app/app.go) は 480×272 未満ならデモを省いて紙・パレット・CLEAR だけにする（`app_small`）。
 - 320×240 の配置：数独は1マス 25px、オセロは1マス 25px（右の欄に 105px 残して「THINKING...」を1行に）、ポーカーとソリティアはカードを小さく（56×72、42×54）、ランチャーのタイルは 104px 幅（SOLITAIRE が太字で 99px）。長いメッセージは単語で折り返すか小さい字にする。
@@ -814,7 +814,7 @@ ESP32（PSRAM なし）、ILI9341（240×320、SPI）、XPT2046（抵抗膜タ�
 
 ## 17. PicoPad のゲームの移植（picopad、15）
 
-PicoPad は RP2040 のゲーム機（320×240 の ST7789、十字キーと A・B・X・Y、PWM の音）。その C の SDK [PicoLibSDK](https://github.com/Panda381/PicoLibSDK) にはゲームのサンプルが付いている（`PicoPad/GAME/` の 19 本。作者の自作分は Unlicense。TINYGAME の 22 本は GPLv3 なのでこのリポジトリには入れない）。[picopad](../picopad/picopad.go) はそのゲームを Go に移すための SDK の代わりで、移植したのはテトリス（[games/tetris](../games/tetris/tetris.go)、[15_tetris](../examples/15_tetris/main.go)）、迷路（[games/maze](../games/maze/maze.go)、[16_maze](../examples/16_maze/main.go)）、15 パズル（[games/fifteen](../games/fifteen/fifteen.go)、[17_fifteen](../examples/17_fifteen/main.go)）。
+PicoPad は RP2040 のゲーム機（320×240 の ST7789、十字キーと A・B・X・Y、PWM の音）。その C の SDK [PicoLibSDK](https://github.com/Panda381/PicoLibSDK) にはゲームのサンプルが付いている（`PicoPad/GAME/` の 19 本。作者の自作分は Unlicense。TINYGAME の 22 本は GPLv3 なのでこのリポジトリには入れない）。[picopad](../picopad/picopad.go) はそのゲームを Go に移すための SDK の代わりで、移植したのはテトリス（[games/tetris](../games/tetris/tetris.go)、[15_tetris](../examples/15_tetris/main.go)）、迷路（[games/maze](../games/maze/maze.go)、[16_maze](../examples/16_maze/main.go)）、15 パズル（[games/fifteen](../games/fifteen/fifteen.go)、[17_fifteen](../examples/17_fifteen/main.go)）、ライフゲーム（[games/life](../games/life/life.go)、[18_life](../examples/18_life/main.go)）。
 
 ### 方針
 
@@ -884,14 +884,22 @@ PicoPad は 320×240×16bit（150KB）のフレームバッファに描き、`Di
 - 探索の間は SDK の関数を呼ばないので、ボタンも画面も止まる（PicoPad と同じ）。ブラウザでも同じで、テストの種では X から 30 秒以内に揃った。
 - 矢印は「穴の隣のタイルをその向きに動かす」（RIGHT は穴の左のタイルを右へ）。C のとおり。
 
+### ライフゲームの移植（18）
+
+- C の `main.cpp`（約 400 行）を関数ごとに写した。世界は 50×50（端はつながる）で、表示は中央の 20×15（16×16 のタイル）。C の `Run()`（生命を動かす）は、ゲーム全体の `Run` と名前がぶつかるので `runLife`。1 世代の計算（隣の数を数えて、3 なら生まれ、2 ならそのまま、ほかは死ぬ）は、テストで呼べるように `generation` に分けた（中身は C のまま）。
+- スロット 10 個（50×50 × 10 = 25KB）に、C の `Samples`（Life、ペンタデカスロン、R ペントミノ、ダイハード、どんぐり、グライダー、宇宙船、パルサー、ゴスパーとシムキンのグライダー銃）を中央に入れる。X で今の世界を保存して次へ。B で動かす前に保存し、止めたら読み戻す。
+- C のクリップボード（`Clip`、2.5KB）は消すだけで使われていないので省いた。
+- RAM：ゲームの構造体が 30KB（世界・隣の数・スロット）。ESP32 では残りが約 60KB あるが、ESP32-4827S043 では起動直後のヒープ約 130KB のうち約 127KB を使い、残りは約 5KB しかない（実機では未確認）。S043 では RGB 液晶のフレームバッファに直接描けば 75KB 空く（5 章の 8bit のバッファを使わない）。
+
 ### テスト
 
 - [picopad_test.go](../picopad/picopad_test.go)：画像（8bit・4bit・透明色つき）と切り抜き、文字、256 色を超えたとき、`DrawClear` で番号が空くこと、dirty rect の送り方（帯ごと）、中央に置くこと、ボタン（繰り返し・離す・最初から押されている・タッチの 9 か所・眠らずに待つループ）、乱数。
 - [tetris_test.go](../games/tetris/tetris_test.go)：最初の画面のゴールデン画像（`tetris_start`。320×240 と、480×272 の中央の両方で同じ）、移動・回転・落下、デモ（ボタンを押さずに 120 秒：10 秒でデモになり、点と消した行が増える）、2 行消して次のレベル、ゲームオーバーで最高点が残ること、Y で `Run` から戻ること。画面の枠の中のブロックは、盤のタイルと 1 ピクセルずつ比べる（`checkField`）。
 - [maze_test.go](../games/maze/maze_test.go)：最初の画面（`maze_start`。顔とその周りだけ見える）、20 個の種で迷路の石が全部壁になり通路が全部つながること、最短の道をボタンで進んで出口に着き、迷路全体が見えて（`maze_solved`）ボタンで次の迷路になること、A で出口が見えて元に戻ること。
 - [fifteen_test.go](../games/fifteen/fifteen_test.go)：最初の画面（`fifteen_start`。混ぜた盤）、`shift` の差分の更新と `calcPos` が合うこと（20 通り × 200 手）、矢印でタイルが C のとおりに動くこと（端では動かない）、X で最後まで解けて（`fifteen_solved`。ゲームの時間で約 23 秒）ボタンで次のゲームになること。
-- 元のゲームの画面写真（PicoLibSDK の `PicoPad/GAME/TETRIS/TETRIS.PNG`）と `tetris_start` を RGB565 で比べ、動かない部分（壁・枠・題字・統計のブロック）は全ピクセル同じだった。迷路の `MAZE.PNG`（途中まで進んだ迷路）は、左上 4 ピクセルずらした 8×8 のマス 1,131 個がどれも、こちらで描いたタイル 17 種のどれかと全ピクセル同じだった（4bit の画像の読み方と描く位置が同じ）。15 パズルの `FIFTEEN.PNG` も、48×48 のマス 16 個がどれもタイル 18 種のどれかと全ピクセル同じで、盤の外は黒。
-- ブラウザ（`make wasm PKG=./examples/15_tetris`・`16_maze`・`17_fifteen`）は headless Chromium と Playwright で確かめた。テトリスは表示・A で開始・左右・回転・落下・B で一時停止、迷路は矢印で進む・壁で止まる・A で出口が見えて戻る、15 パズルは矢印でタイルが動く・X で最後まで解ける。実機は未確認。
+- [life_test.go](../games/life/life_test.go)：最初の画面（`life_start`。スロット 1 のペンタデカスロンとカーソル）、`generation` をテストの中に素直に書いた規則（端はつながる）とランダムな世界で 30 世代比べる、グライダーが世界の角を越えて 200 世代で元に戻る、X でスロットが順に出て A で変えたセルが保存されている、B で動いて止めると元に戻る、カーソルが端から反対の端へ回る。
+- 元のゲームの画面写真（PicoLibSDK の `PicoPad/GAME/TETRIS/TETRIS.PNG`）と `tetris_start` を RGB565 で比べ、動かない部分（壁・枠・題字・統計のブロック）は全ピクセル同じだった。迷路の `MAZE.PNG`（途中まで進んだ迷路）は、左上 4 ピクセルずらした 8×8 のマス 1,131 個がどれも、こちらで描いたタイル 17 種のどれかと全ピクセル同じだった（4bit の画像の読み方と描く位置が同じ）。15 パズルの `FIFTEEN.PNG` も、48×48 のマス 16 個がどれもタイル 18 種のどれかと全ピクセル同じで、盤の外は黒。ライフゲームの `LIFE.PNG` は、16×16 のマス 300 個がどれもタイル 4 種のどれかと全ピクセル同じで、`life_start` と違うのはカーソルの 2 マスだけ（写真はカーソルを 1 つ右に動かしたあと）。
+- ブラウザ（`make wasm PKG=./examples/15_tetris`・`16_maze`・`17_fifteen`・`18_life`）は headless Chromium と Playwright で確かめた。テトリスは表示・A で開始・左右・回転・落下・B で一時停止、迷路は矢印で進む・壁で止まる・A で出口が見えて戻る、15 パズルは矢印でタイルが動く・X で最後まで解ける、ライフゲームはカーソル・反転・スロット・B で動いて止めると戻る。実機は未確認。
 
 ### ほかのゲームを移植するとき
 
