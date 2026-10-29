@@ -2,7 +2,7 @@
 // ones of the C source that cannot be distributed (characters of films:
 // R2-D2, the starship Enterprise, a Klingon warship, the Death Star,
 // Ant-Man; and the logo of a shop on the title), and writes art.go, the
-// title in data/titleImg.bin and previews in art/.
+// title in data/titleImg.dat and previews in art/.
 //
 //	PICOLIBSDK=~/PicoLibSDK go generate ./games/pictor
 //
@@ -62,11 +62,11 @@ func main() {
 
 	// the title without the logo of the shop
 	pal, img := title(*root)
-	if err := os.WriteFile(filepath.Join("data", "titleImg.bin"), img, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join("data", "titleImg.dat"), img, 0o644); err != nil {
 		log.Fatal(err)
 	}
 	fmt.Fprintf(&b, "\n// the title of the C source (img/title.cpp, decompressed) without the logo\n// of the shop in the upper left corner\n//\n// format: 8-bit paletted pixel graphics\n// image width: 320 pixels\n// image height: 240 lines\n// image pitch: 320 bytes\n")
-	fmt.Fprintf(&b, "const titleImgPal = %s\n\n//go:embed data/titleImg.bin\nvar titleImg string\n", pixelart.Literal(pal))
+	fmt.Fprintf(&b, "const titleImgPal = %s\n\n//go:embed data/titleImg.dat\nvar titleImg string\n", pixelart.Literal(pal))
 	t := &pixelart.Image{W: 320, H: 240, Pix: img}
 	for i := 0; i < len(pal)/2; i++ {
 		t.Pal = append(t.Pal, picopad.Color(pal[2*i])|picopad.Color(pal[2*i+1])<<8)

@@ -10,9 +10,10 @@
 // before an array ("// format: 8-bit paletted pixel graphics" ...) is kept.
 //
 // With -embed dir, the arrays of 1 KB or more are written to dir (next to
-// the output file) as name.bin and become string variables with
-// //go:embed: TinyGo keeps them in flash as well, and the repository holds
-// the bytes instead of four characters each.
+// the output file) as name.dat (.gitignore has *.bin, the firmware) and
+// become string variables with //go:embed: TinyGo keeps them in flash as
+// well, and the repository holds the bytes instead of four characters
+// each.
 //
 //	go run ./tools/picoimg -pkg tetris -root ~/PicoLibSDK -o games/tetris/tiles.go PicoPad/GAME/TETRIS/img/tiles.cpp
 package main
@@ -72,7 +73,7 @@ func main() {
 				fmt.Fprintf(&b, "%s\n", l)
 			}
 			if *embed != "" && len(c.data) >= 1024 {
-				file := filepath.Join(*embed, c.name+".bin")
+				file := filepath.Join(*embed, c.name+".dat")
 				if err := os.WriteFile(filepath.Join(filepath.Dir(*out), file), c.data, 0o644); err != nil {
 					log.Fatal(err)
 				}
