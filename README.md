@@ -95,6 +95,7 @@ make wasm PKG=./cmd/games && make serve   # ブラウザ
 | 21_chess | 同じく PicoLibSDK のチェス（[games/chess](games/chess/chess.go)）。最初の画面で LEFT が白で CPU と対戦、RIGHT が黒、DOWN が2人、UP がデモ、A が強さ（2〜5 手先まで読む）。矢印でカーソル、A で駒を持ち上げて置く、B で戻す、X で CPU に指させる、Y でやめる。C のとおりキャスリングの表示位置がずれ、ポーンは必ずクイーンになる。wasm でも動く | 駒が動かせる、CPU が指す |
 | 22_eggs | 同じく PicoLibSDK のリバーシ風のゲーム（[games/eggs](games/eggs/eggs.go)）。ひよこを置いて、ひよこで終わる列を返す（プレイヤー1はめんどり→ひよこ→卵、プレイヤー2は卵→ひよこ→めんどり）。最初の画面で LEFT が卵で CPU と対戦、RIGHT がめんどり、DOWN が2人、UP がデモ。矢印でカーソル、A で置く、X で CPU の手を見る、Y でやめる。wasm でも動く | 置ける所に印、列が返る、CPU が打つ |
 | 23_train | 同じく PicoLibSDK の列車のパズル（[games/train](games/train/train.go)）。盤の物を全部集めると門が開き、門から出ると次の面（全 50 面、面ごとのパスワード付き）。集めた物は貨車になって後ろにつながり、壁や自分にぶつかると最初から。矢印で進む向き、A でパスワード入力、X で解答を見る、Y でやり直し（動く前はデモに戻る）。デモ中はキーで始まり、Y を押したままでやめる。wasm でも動く | 列車が物を集めて貨車が伸びる、門が開く、全 50 面の解答で門に着く |
+| 24_picoinvaders | 同じく PicoLibSDK のスペースインベーダー（[games/picoinvaders](games/picoinvaders/invaders.go)、08_invaders とは別物）。55 匹の編隊が左右に動きながら下りてくる。LEFT/RIGHT で砲台、A で撃つ。家（トーチカ）は弾で少しずつ欠ける。ときどき母船（1000 点）。全滅させると次の面、Y でやめる。wasm でも動く | 撃つと 10〜30 点、家が欠ける、全滅で LEVEL UP、GAME OVER のあとキーで新しいゲーム |
 
 02_colorbars はシリアルから1文字コマンドを受け付ける：
 `c` カラーバー、`r`/`g`/`b`/`w`/`k` 単色（赤/緑/青/白/黒）、`d` レジスタを再ダンプ。

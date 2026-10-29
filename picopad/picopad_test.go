@@ -69,6 +69,23 @@ func TestDrawImgPal(t *testing.T) {
 	}
 }
 
+func TestDrawGetPoint(t *testing.T) {
+	c, _, _, _ := newTest(t, Width, Height)
+	orange := RGB(255, 128, 0)
+	c.DrawRect(10, 10, 2, 2, orange)
+	c.DrawPoint(11, 11, ColWhite)
+	for _, tc := range []struct {
+		x, y int
+		want Color
+	}{
+		{10, 10, orange}, {11, 10, orange}, {11, 11, ColWhite}, {12, 10, ColBlack}, {-1, 10, ColBlack}, {Width, 0, ColBlack},
+	} {
+		if got := c.DrawGetPoint(tc.x, tc.y); got != tc.want {
+			t.Errorf("DrawGetPoint(%d, %d) = %#04x, want %#04x", tc.x, tc.y, got, tc.want)
+		}
+	}
+}
+
 func TestDrawImg4Pal(t *testing.T) {
 	c, d, _, _ := newTest(t, Width, Height)
 	pal := palette(ColBlack, ColRed, ColGreen, ColBlue)

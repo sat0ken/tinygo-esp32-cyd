@@ -13,6 +13,16 @@ func (c *Console) DrawPoint(x, y int, col Color) {
 	c.DispDirtyRect(x, y, 1, 1)
 }
 
+// DrawGetPoint returns the colour of one pixel of the frame buffer (black
+// out of the screen). Games compare it with the colours they drew, which
+// it returns unchanged while the frame buffer has at most 256 colours.
+func (c *Console) DrawGetPoint(x, y int) Color {
+	if uint(x) >= Width || uint(y) >= Height {
+		return ColBlack
+	}
+	return Color(c.pal[c.pix[y*Width+x]])
+}
+
 // DrawRect fills a rectangle (a negative w or h extends to the left or
 // up).
 func (c *Console) DrawRect(x, y, w, h int, col Color) {
