@@ -86,6 +86,38 @@ func TestDrawGetPoint(t *testing.T) {
 	}
 }
 
+func TestShadow(t *testing.T) {
+	for _, tc := range []struct {
+		col  Color
+		shad uint8
+		want Color
+	}{
+		{ColWhite, 15, 0xD71A}, {ColWhite, 8, 0x7BEF}, {ColWhite, 1, 0x0861}, {ColWhite, 0, ColBlack}, {RGB(255, 128, 0), 8, 0x7A00},
+	} {
+		if got := Shadow(tc.col, tc.shad); got != tc.want {
+			t.Errorf("Shadow(%#04x, %d) = %#04x, want %#04x", tc.col, tc.shad, got, tc.want)
+		}
+	}
+
+	c, _, _, _ := newTest(t, Width, Height)
+	c.DrawRect(0, 0, 8, 2, ColWhite)
+	c.DrawRect(8, 0, 8, 2, ColRed)
+	c.DrawRectShadow(4, 0, 8, 1, 8)
+	// a 1-bit image 16 wide: 0xF0 0x0F
+	c.DrawBlit1Shadow("\xf0\x0f", 0, 0, 0, 1, 16, 1, 16, 1)
+	for _, tc := range []struct {
+		x, y int
+		want Color
+	}{
+		{3, 0, ColWhite}, {4, 0, 0x7BEF}, {11, 0, Shadow(ColRed, 8)}, {12, 0, ColRed},
+		{0, 1, 0x0861}, {4, 1, ColWhite}, {11, 1, ColRed}, {12, 1, Shadow(ColRed, 1)},
+	} {
+		if got := c.DrawGetPoint(tc.x, tc.y); got != tc.want {
+			t.Errorf("pixel %d, %d = %#04x, want %#04x", tc.x, tc.y, got, tc.want)
+		}
+	}
+}
+
 func TestDrawImg4Pal(t *testing.T) {
 	c, d, _, _ := newTest(t, Width, Height)
 	pal := palette(ColBlack, ColRed, ColGreen, ColBlue)

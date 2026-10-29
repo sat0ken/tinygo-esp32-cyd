@@ -106,7 +106,8 @@ type Console struct {
 	bufs [2][]byte // bandRows rows of big endian RGB565
 	next int       // the buffer to fill: the other may be going out
 
-	font Font
+	font    Font
+	shadows [16]*shadowTab // the shadow levels used, made when needed
 
 	keys
 	rand uint64
