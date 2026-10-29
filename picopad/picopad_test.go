@@ -118,6 +118,21 @@ func TestShadow(t *testing.T) {
 	}
 }
 
+func TestSaveRect(t *testing.T) {
+	c, _, _, _ := newTest(t, Width, Height)
+	c.DrawRect(Width-4, 0, 4, 2, ColRed)
+	c.DrawPoint(Width-1, 1, ColWhite)
+	buf := make([]uint8, 8*2)
+	c.SaveRect(buf, Width-4, 0, 8, 2) // half out of the screen
+	c.DrawRect(Width-4, 0, 4, 2, ColGreen)
+	c.RestoreRect(buf, Width-4, 0, 8, 2)
+	if a, b := c.DrawGetPoint(Width-4, 0), c.DrawGetPoint(Width-1, 1); a != ColRed || b != ColWhite {
+		t.Errorf("restored %#04x %#04x", a, b)
+	}
+	c.SaveRect(buf, -2, -1, 8, 2) // only the pixels on the screen
+	c.RestoreRect(buf, -2, -1, 8, 2)
+}
+
 func TestDrawImg4Pal(t *testing.T) {
 	c, d, _, _ := newTest(t, Width, Height)
 	pal := palette(ColBlack, ColRed, ColGreen, ColBlue)

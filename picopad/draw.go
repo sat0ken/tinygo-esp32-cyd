@@ -23,6 +23,37 @@ func (c *Console) DrawGetPoint(x, y int) Color {
 	return Color(c.pal[c.pix[y*Width+x]])
 }
 
+// SaveRect copies the frame buffer of a rectangle to buf (w*h, a row
+// after the other), for the games that save the screen under something
+// they draw (C: memcpy from FrameBuf) and put it back with RestoreRect.
+// The pixels out of the screen are skipped. buf holds palette indices,
+// which stay valid until the palette is freed (a full-screen fill).
+func (c *Console) SaveRect(buf []uint8, x, y, w, h int) {
+	c.copyRect(buf, x, y, w, h, false)
+}
+
+// RestoreRect puts back a rectangle saved by SaveRect.
+func (c *Console) RestoreRect(buf []uint8, x, y, w, h int) {
+	c.copyRect(buf, x, y, w, h, true)
+	c.DispDirtyRect(x, y, w, h)
+}
+
+func (c *Console) copyRect(buf []uint8, x, y, w, h int, restore bool) {
+	x1, x2 := max(x, 0), min(x+w, Width)
+	for row := max(y, 0); row < min(y+h, Height); row++ {
+		if x1 >= x2 {
+			return
+		}
+		b := buf[(row-y)*w+x1-x : (row-y)*w+x2-x]
+		p := c.pix[row*Width+x1 : row*Width+x2]
+		if restore {
+			copy(p, b)
+		} else {
+			copy(b, p)
+		}
+	}
+}
+
 // DrawRect fills a rectangle (a negative w or h extends to the left or
 // up).
 func (c *Console) DrawRect(x, y, w, h int, col Color) {
