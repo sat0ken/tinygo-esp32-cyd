@@ -86,8 +86,9 @@ make wasm PKG=./cmd/games && make serve   # ブラウザ
 | 12_poker | ビデオポーカー（ジャックス・オア・ベター、9/6 配当）。BET ONE / MAX BET で賭けて DEAL、残すカードをタップ（HELD）して DRAW。上の配当表で賭け数の列が赤、できている役の行が光る。クレジットが尽きたら DEAL で 100 補充。wasm でも動く | カードのタップで HELD が切り替わる、ボタンの位置 |
 | 13_kart | カートレース（オリジナルのコース、3周、CPU 3台）。地面は昔の「モード7」と同じく、画面の1行ずつを平らなコースの地図の上の1本の線として描く。CPU の強さ（EASY / NORMAL / HARD）、カウントダウン、加速パネル、芝生では遅くなる、カート同士の押し合い、周回・順位・タイム・小さな地図、ゴールで順位とベストラップ。ジョイスティック（スティックでハンドル、A アクセル、B ブレーキ、Y でやめる）かタッチ（地面に触れている間アクセル、触れた側へ曲がる、地図をタップでやめる）。ログに fps。wasm でも動く | ESP32-2432S028R で 46 fps（DMA） |
 | 14_starguard | 宇宙の防衛シューティング「STAR GUARD」（オリジナル）。操縦席から前を見て、飛んでくる岩とロボット艦を照準で撃つ。星・敵は 3D の位置を画面に投影して描き、遠いものから重ねる。強さ（EASY / NORMAL / HARD）、3ステージ（決まった数を倒すとクリア、シールド +20）のあと母艦（HP ゲージ、ドローンを出す）。シールドのカプセルを撃つとシールドが戻る。下の計器にシールド・スコア・ステージ・レーダー。ジョイスティック（スティックで照準、A を押している間撃つ、Y でやめる）かタッチ（触れた所を狙って撃つ、レーダーをタップでやめる）。ログに fps。wasm でも動く | ESP32-2432S028R で 37 fps（DMA） |
-| 15_tetris | PicoPad（RP2040 のゲーム機）の SDK「PicoLibSDK」のテトリスを C から移植したもの（[games/tetris](games/tetris/tetris.go)）。左右で移動、UP か X で回転、DOWN か A で落とす、B で一時停止、Y でやめる。新しいゲームは一時停止で始まり、10秒ボタンを押さないとデモになる。画面は PicoPad と同じ 320×240（大きい液晶では中央）。ジョイスティックがなければ画面を 3×3 に分けたタッチのボタンで遊ぶ（[PicoPad のゲーム](#picopad-のゲーム15_tetris16_maze)）。wasm でも動く | ブロックが動く・消える、ちらつかない、ボタンの反応 |
-| 16_maze | 同じく PicoLibSDK の迷路（[games/maze](games/maze/maze.go)）。矢印で顔を動かして出口を探す。見えるのは通った道の周りだけ。A で出口が一瞬見える。出口に着くと迷路全体が見え、ボタンで次の迷路。Y でやめる。ジョイスティックがなければ 3×3 のタッチのボタン（[PicoPad のゲーム](#picopad-のゲーム15_tetris16_maze)）。wasm でも動く | 顔が動く・壁で止まる、通った所が見えていく |
+| 15_tetris | PicoPad（RP2040 のゲーム機）の SDK「PicoLibSDK」のテトリスを C から移植したもの（[games/tetris](games/tetris/tetris.go)）。左右で移動、UP か X で回転、DOWN か A で落とす、B で一時停止、Y でやめる。新しいゲームは一時停止で始まり、10秒ボタンを押さないとデモになる。画面は PicoPad と同じ 320×240（大きい液晶では中央）。ジョイスティックがなければ画面を 3×3 に分けたタッチのボタンで遊ぶ（[PicoPad のゲーム](#picopad-のゲーム)）。wasm でも動く | ブロックが動く・消える、ちらつかない、ボタンの反応 |
+| 16_maze | 同じく PicoLibSDK の迷路（[games/maze](games/maze/maze.go)）。矢印で顔を動かして出口を探す。見えるのは通った道の周りだけ。A で出口が一瞬見える。出口に着くと迷路全体が見え、ボタンで次の迷路。Y でやめる。ジョイスティックがなければ 3×3 のタッチのボタン（[PicoPad のゲーム](#picopad-のゲーム)）。wasm でも動く | 顔が動く・壁で止まる、通った所が見えていく |
+| 17_fifteen | 同じく PicoLibSDK の 15 パズル（[games/fifteen](games/fifteen/fifteen.go)）。矢印でタイルを穴に動かして 1〜15 に並べる。A で混ぜ直し、X で自動で解く（ボタンで止まる）、Y でやめる。揃うと点滅し、ボタンで次のゲーム。ジョイスティックがなければ 3×3 のタッチのボタン（[PicoPad のゲーム](#picopad-のゲーム)）。wasm でも動く | タイルが動く、X で最後まで解ける |
 
 02_colorbars はシリアルから1文字コマンドを受け付ける：
 `c` カラーバー、`r`/`g`/`b`/`w`/`k` 単色（赤/緑/青/白/黒）、`d` レジスタを再ダンプ。
@@ -243,15 +244,15 @@ cmd/games と 08〜14 は、起動時にモジュールを探し（`platform.Ini
 - 読み取りは毎フレーム 1.2ms（まとめ読み、100kHz）。モジュールが答えないフレームは何も押していない扱い。
 - ブラウザ版では矢印キーがスティック、Z が A、X が B、A が X、S が Y、Enter が押し込み。
 
-## PicoPad のゲーム（15_tetris・16_maze）
+## PicoPad のゲーム
 
-[PicoLibSDK](https://github.com/Panda381/PicoLibSDK) は PicoPad（RP2040、320×240 の液晶、十字キーと A・B・X・Y）の C の SDK で、ゲームのサンプルが付いている（`PicoPad/GAME/`。作者の自作分は Unlicense）。[picopad](picopad/picopad.go) パッケージは、そのゲームが使う SDK の関数を同じ名前・同じ引数で持つ。C のゲームを関数ごとに Go に書き換えれば、ゲームのループもそのまま動く。移植したのはテトリス（[games/tetris](games/tetris/tetris.go)）と迷路（[games/maze](games/maze/maze.go)）。
+[PicoLibSDK](https://github.com/Panda381/PicoLibSDK) は PicoPad（RP2040、320×240 の液晶、十字キーと A・B・X・Y）の C の SDK で、ゲームのサンプルが付いている（`PicoPad/GAME/`。作者の自作分は Unlicense）。[picopad](picopad/picopad.go) パッケージは、そのゲームが使う SDK の関数を同じ名前・同じ引数で持つ。C のゲームを関数ごとに Go に書き換えれば、ゲームのループもそのまま動く。移植したのはテトリス（[games/tetris](games/tetris/tetris.go)、15_tetris）、迷路（[games/maze](games/maze/maze.go)、16_maze）、15 パズル（[games/fifteen](games/fifteen/fifteen.go)、17_fifteen）。
 
 ```sh
 make flash-s028 PKG=./examples/15_tetris    # ESP32-2432S028R（画面がちょうど 320×240）
 make flash-s035 PKG=./examples/15_tetris    # ESP32-3248S035C（中央の 320×240）
 make wasm PKG=./examples/15_tetris && make serve
-make flash-s028 PKG=./examples/16_maze      # 迷路も同じ
+make flash-s028 PKG=./examples/16_maze      # 迷路、15 パズル（17_fifteen）も同じ
 ```
 
 | PicoPad | この基板 |
@@ -261,11 +262,12 @@ make flash-s028 PKG=./examples/16_maze      # 迷路も同じ
 | （ボタンだけ） | タッチ：画面を 3×3 に分けて、上・左・右・下の真ん中が十字キー、中央と右下が A、左下が B、右上が X、左上が Y |
 
 - PicoPad のフレームバッファは 16bit（150KB）。ESP32（PSRAM なし）でこれを持つと、ヒープが約 37KB しか残らない（TinyGo 0.44 のビルドで確認）。そこで 8bit のパレット番号（75KB）で持ち、`DispUpdate` が変わった範囲を 8 行ずつ RGB565 に直して送る（ESP32 では DMA）。色には最初に描かれたときに番号を付け、256 色を超えたら一番近い色にする。テトリスは 80 色。
-- RAM：ESP32-2432S028R で起動直後のヒープ約 186KB のうち、フレームバッファ 75KB と送信用のバッファ 10KB を使う（15・16 とも）。
-- 画像とフォントは、PicoLibSDK の C の配列（`img/*.cpp`、`_font/*.c`）を [tools/picoimg](tools/picoimg/main.go) で Go の文字列定数にしたもの（フラッシュに置かれる）。作り直すときは PicoLibSDK を取ってきて `PICOLIBSDK=~/PicoLibSDK go generate ./picopad ./games/tetris ./games/maze`。
-- 元のゲームの画面写真と比べた：テトリスはゴールデン画像（`tetris_start`）の動かない部分（壁・枠・題字・統計のブロック）が `TETRIS.PNG` と1ピクセルも違わない。迷路は `MAZE.PNG` の 8×8 のマス 1,131 個がどれも、こちらで描いたタイルのどれかと1ピクセルも違わない。
+- RAM：ESP32-2432S028R で起動直後のヒープ約 186KB のうち、フレームバッファ 75KB と送信用のバッファ 10KB を使う（15〜17 とも）。
+- 画像とフォントは、PicoLibSDK の C の配列（`img/*.cpp`、`_font/*.c`）を [tools/picoimg](tools/picoimg/main.go) で Go の文字列定数にしたもの（フラッシュに置かれる）。作り直すときは PicoLibSDK を取ってきて `PICOLIBSDK=~/PicoLibSDK go generate ./picopad ./games/...`。
+- 元のゲームの画面写真と比べた：テトリスはゴールデン画像（`tetris_start`）の動かない部分（壁・枠・題字・統計のブロック）が `TETRIS.PNG` と1ピクセルも違わない。迷路は `MAZE.PNG` の 8×8 のマス 1,131 個、15 パズルは `FIFTEEN.PNG` の 48×48 のマス 16 個がどれも、こちらで描いたタイルのどれかと1ピクセルも違わない。
 - 音はまだない（C の `PLAYSOUND` はコメントにしてある）。`ResetToBootLoader`（PicoPad では SD カードのメニューに戻る）は `Run` から戻ること。cmd/games（ランチャー）にはまだ入れていない。
 - 迷路のメインループは C のとおり待たずに回り、100 周ごとに画面全体を描き直す（同じ絵を送り続けるが、見た目は変わらない）。
+- 15 パズルの X は、C と同じ探索で解く（タイルの組ごとに、近づける探索と揃える探索を交互に、届かなければ深くして）。探索の間はボタンも画面も止まる（PicoPad と同じ）。ブラウザでは 30 秒以内に解けた。
 - 仕組みと、ほかのゲームを移植するときの手順は [docs/ARCHITECTURE.md 17章](docs/ARCHITECTURE.md#17-picopad-のゲームの移植picopad15)。
 
 ## ブラウザ（wasm）で動かす
@@ -373,4 +375,4 @@ wasm 版やホストのテストで問題がなくても、次は実機で確認
 - フェーズ8：VSYNC は割り込みではなくポーリング（`WaitVSync`）。割り込み版は未実装。
 - フェーズ10：メモリ節約モード（8bit パレット + バウンスバッファ）は未実装。
 - タッチのキャリブレーション値は1台の実測値。個体差があるので、ずれる場合は 04_touch で測り直す。
-- PicoPad のゲーム：音、ランチャーへの追加、ほかのゲームの移植（docs/ARCHITECTURE.md 17章）。15_tetris・16_maze は実機では未確認。
+- PicoPad のゲーム：音、ランチャーへの追加、ほかのゲームの移植（docs/ARCHITECTURE.md 17章）。15〜17 は実機では未確認。
