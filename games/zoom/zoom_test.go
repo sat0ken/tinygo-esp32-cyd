@@ -277,3 +277,28 @@ func TestScenes(t *testing.T) {
 	g.dispAll()
 	goldentest.Check(t, "zoom_space", d.Image())
 }
+
+// TestOneGame: with OneGame, Run returns after the last ship, and on Y in
+// the game (not to the title).
+func TestOneGame(t *testing.T) {
+	g, _, clock, p := newTest(t, 1)
+	g.OneGame = true
+	p.Tap(hal.PadA, 400*ms)
+	clock.At(7*time.Second, func() { // after the protection of the new ship
+		g.lives = 0
+		g.shipCrash()
+	})
+	g.Run()
+	if clock.T < 10*time.Second || clock.T > 12*time.Second {
+		t.Errorf("Run returned at %v", clock.T)
+	}
+
+	g, _, clock, p = newTest(t, 1)
+	g.OneGame = true
+	p.Tap(hal.PadA, 400*ms)
+	p.Tap(hal.PadY, 5*time.Second)
+	g.Run()
+	if clock.T > 5200*ms {
+		t.Errorf("Y: Run returned at %v", clock.T)
+	}
+}

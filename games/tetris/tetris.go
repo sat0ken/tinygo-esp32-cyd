@@ -584,11 +584,12 @@ func (g *Game) pause(timeout bool) bool {
 }
 
 // play is the game (Game in the C source): it returns on Y, or when the
-// pause at the start of a game times out.
-func (g *Game) play() {
+// pause at the start of a game times out (false); with OneGame also at the
+// end of the game.
+func (g *Game) play() bool {
 	g.newGame()
 	if !g.pause(true) {
-		return
+		return false
 	}
 
 	for {
@@ -613,9 +614,12 @@ func (g *Game) play() {
 
 				g.genBrick()
 				if !g.checkEnd() {
+					if g.OneGame {
+						return true
+					}
 					g.newGame()
 					if !g.pause(true) {
-						return
+						return false
 					}
 				} else {
 					g.dispBrick(g.brickX, g.brickY, g.brick)
@@ -667,7 +671,7 @@ func (g *Game) play() {
 			g.pause(false)
 
 		case picopad.KeyY:
-			return
+			return true
 
 		case picopad.NoKey:
 
@@ -777,10 +781,13 @@ func (g *Game) playDemo() {
 }
 
 // Run plays: a game, then the demo, and again, until Y ends the demo
-// (main of the C source, which then resets to the boot loader).
+// (main of the C source, which then resets to the boot loader). With
+// OneGame it returns after a game (game over or Y).
 func (g *Game) Run() {
 	for {
-		g.play()
+		if g.play() && g.OneGame {
+			return
+		}
 		g.playDemo()
 		if g.KeyPressed(picopad.KeyY) {
 			return

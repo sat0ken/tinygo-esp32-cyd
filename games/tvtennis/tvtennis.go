@@ -495,10 +495,12 @@ func (g *Game) game(comp1, comp2, tied bool) {
 }
 
 // Run shows the first screen and plays until Y there (Open in the C
-// source, which then resets to the boot loader).
+// source, which then resets to the boot loader). With OneGame it returns
+// after a game (Y: the game has no end).
 func (g *Game) Run() {
 	g.openDraw()
 	for {
+		played := true
 		switch g.KeyGet() {
 		case picopad.KeyLeft:
 			g.game(false, true, false)
@@ -511,6 +513,11 @@ func (g *Game) Run() {
 		case picopad.KeyA:
 			g.game(false, false, true)
 		case picopad.KeyY:
+			return
+		default:
+			played = false
+		}
+		if played && g.OneGame {
 			return
 		}
 		g.WaitMs(10)

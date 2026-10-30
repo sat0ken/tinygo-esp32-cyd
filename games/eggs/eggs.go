@@ -530,10 +530,12 @@ func (g *Game) blinkPlayers(n int, p1, p2 uint8) {
 }
 
 // Run plays until Y on the first screen (main of the C source, which then
-// resets to the boot loader).
+// resets to the boot loader). With OneGame it returns after a game (the
+// winner shown, or Y).
 func (g *Game) Run() {
 	g.wins = [2]int{}
 	for {
+		played := true
 		switch g.openScreen() {
 		case picopad.KeyLeft: // the eggs
 			g.playGame(false, true)
@@ -544,6 +546,11 @@ func (g *Game) Run() {
 		case picopad.KeyDown: // 2 players
 			g.playGame(false, false)
 		case picopad.KeyY:
+			return
+		default:
+			played = false
+		}
+		if played && g.OneGame { // the winner shown, or Y
 			return
 		}
 	}
