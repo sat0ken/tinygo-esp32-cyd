@@ -36,6 +36,8 @@ memlcd/       メモリ上バックエンド（テスト用、PNG 出力）
 platform/     ビルドタグで実機 / wasm / ホストを切り替える初期化
 app/          アプリ本体（hal だけに依存）とゴールデン画像テスト
 cmd/app/      実機・wasm 共通のエントリポイント
+cmd/games/    ゲーム（08〜14）を選ぶ画面
+cmd/picopad/  PicoPad から移植したゲーム（15〜33）を選ぶ画面
 web/          index.html（app.wasm と wasm_exec.js は make wasm で生成）
 examples/     01_backlight, 02_colorbars, 03_tinydraw, 04_touch
 testdata/golden/  ゴールデン画像
@@ -281,11 +283,27 @@ make flash-s028 PKG=./examples/16_maze      # ほかのゲームも同じ（16_m
 - RAM：ESP32-2432S028R で起動直後のヒープ約 186KB のうち、フレームバッファ 75KB と送信用のバッファ 10KB を使う（ほかにゲームが使う分。18_life はゲームの分の 30KB も使い、残りは約 60KB。ESP32-4827S043 では起動直後のヒープ約 130KB のうち約 127KB を使うので、残りは約 5KB しかない）。
 - 画像とフォントは、PicoLibSDK の C の配列（`img/*.cpp`、`_font/*.c`）を [tools/picoimg](tools/picoimg/main.go) で Go の文字列定数にしたもの（フラッシュに置かれる）。作り直すときは PicoLibSDK を取ってきて `PICOLIBSDK=~/PicoLibSDK go generate ./picopad ./games/...`。
 - 元のゲームの画面写真と比べた：テトリスはゴールデン画像（`tetris_start`）の動かない部分（壁・枠・題字・統計のブロック）が `TETRIS.PNG` と1ピクセルも違わない。迷路は `MAZE.PNG` の 8×8 のマス 1,131 個、15 パズルは `FIFTEEN.PNG` の 48×48 のマス 16 個、ライフゲームは `LIFE.PNG` の 16×16 のマス 300 個がどれも、こちらで描いたタイルのどれかと1ピクセルも違わない。
-- 音はまだない（C の `PLAYSOUND` はコメントにしてある）。`ResetToBootLoader`（PicoPad では SD カードのメニューに戻る）は `Run` から戻ること。cmd/games（ランチャー）にはまだ入れていない。
+- 音はまだない（C の `PLAYSOUND` はコメントにしてある）。`ResetToBootLoader`（PicoPad では SD カードのメニューに戻る）は `Run` から戻ること。
 - 迷路のメインループは C のとおり待たずに回り、100 周ごとに画面全体を描き直す（同じ絵を送り続けるが、見た目は変わらない）。
 - 15 パズルの X は、C と同じ探索で解く（タイルの組ごとに、近づける探索と揃える探索を交互に、届かなければ深くして）。探索の間はボタンも画面も止まる（PicoPad と同じ）。ブラウザでは 30 秒以内に解けた。
 - `PicoPad/GAME/` の 21 本のうち 19 本を移植した（15〜33）。FLAPPY は他社のゲームの絵と面が入っているので、MULTISET は同じゲームのまとめなので入れていない。PICTOR は映画のキャラクターの絵を、ZOOM はもとにしたアーケードゲームの題字と絵を全部、こちらで描いたドット絵に替えた（ZOOM は名前も Gate Runner にした）。倉庫番は配布の条件がはっきりした作者の面だけ。
 - 仕組みと、ほかのゲームを移植するときの手順は [docs/ARCHITECTURE.md 17章](docs/ARCHITECTURE.md#17-picopad-のゲームの移植picopad15)。
+
+### 選ぶ画面から遊ぶ（cmd/picopad）
+
+```sh
+make flash-s028 PKG=./cmd/picopad           # ESP32-2432S028R
+make flash-s035 PKG=./cmd/picopad           # ESP32-3248S035C
+make flash-noerase PKG=./cmd/picopad        # ESP32-4827S043
+make wasm PKG=./cmd/picopad && make serve   # ブラウザ
+```
+
+移植したゲームの一覧が出る。矢印で選んで A、またはタッチでゲームの名前をタップして、もう一度タップすると始まる。画面の下に、選んだゲームの説明と、この画面に戻る操作が出る。
+
+- **ゲームオーバーで戻る**：ゲームの終わり（ゲームオーバー、勝負がついたとき）で、ゲームの最初の画面やデモに戻らずに、選ぶ画面に戻る（`picopad.Console.OneGame`）。テトリス・インベーダー・パックマン・Gate Runner はゲームオーバー（Gate Runner は最後の機が爆発したあと）、原子の陣取り・卵・カードゲームは勝者を見せてキーを押したあと、チェスはチェックメイトのあと、PICTOR は Game Over の画面のあと。レイプターは C では最後のシールドのあと燃えたまま続くので、燃えてから 3 秒で戻る。
+- **Y で戻る**：ゲームの途中でも Y で戻る（ゲームの最初の画面の Y も）。PICTOR は Y でゲームのメニューを出して X。終わりのないゲーム（迷路・15 パズル・ライフゲーム・TV テニス・列車・スロット・カーレース）とパズルの続き（迷路・15 パズルは解くと次の問題）は Y で戻る。倉庫番は面から Y で面の一覧・集の一覧・作者の一覧と戻り、作者の一覧で Y。絵の 15 パズルはゲームで Y、絵の一覧で Y。
+- **フラッシュ**：ESP32-2432S028R・ESP32-3248S035C はフラッシュが 4MB で、19 本全部（約 4.8MB）は入らない。絵の 15 パズル（絵が 1.1MB）を外した 18 本で約 3.7MB（`cmd/picopad/nofifteen2.go`、ビルドタグ）。絵の 15 パズルは `examples/31_fifteen2` で単独で動く。ESP32-4827S043（16MB）とブラウザは 19 本（約 4.7MB）。
+- **RAM**：ゲームを始めるたびにフレームバッファ（75KB）を作り直さないように、終わったゲームのフレームバッファを次の画面に回す（`picopad.Console.Close`）。
 
 ## ブラウザ（wasm）で動かす
 
