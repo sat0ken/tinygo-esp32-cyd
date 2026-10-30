@@ -21,9 +21,9 @@ import (
 
 func main() {
 	time.Sleep(500 * time.Millisecond)
-	d, t, err := platform.Init()
+	d, t, err := platform.InitFull() // on the S035, the screen 4/3 bigger
 	if err != nil {
-		println("platform.Init:", err.Error())
+		println("platform.InitFull:", err.Error())
 		platform.Halt()
 	}
 	g := raptor.New(d, t, uint32(time.Now().UnixNano()))

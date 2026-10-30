@@ -206,7 +206,7 @@ func (l *Launcher) menu() int {
 		if l.t != nil {
 			x, y, pressed := l.t.ReadTouch()
 			if pressed && !touched {
-				if i := l.itemAt(x, y); i == l.sel {
+				if i := l.itemAt(c, x, y); i == l.sel {
 					return i
 				} else if i >= 0 {
 					sel = i
@@ -223,9 +223,8 @@ func (l *Launcher) menu() int {
 }
 
 // itemAt returns the game at x, y of the display (-1: none).
-func (l *Launcher) itemAt(x, y int16) int {
-	w, h := l.d.Size()
-	px, py := int(x)-int(w-picopad.Width)/2, int(y)-int(h-picopad.Height)/2
+func (l *Launcher) itemAt(c *picopad.Console, x, y int16) int {
+	px, py := c.ScreenAt(x, y)
 	col, row := (px-colX)/colW, (py-listY)/rowH
 	if px < colX || py < listY || col > 1 || row >= rows {
 		return -1

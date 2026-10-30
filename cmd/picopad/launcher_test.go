@@ -87,6 +87,20 @@ func TestTouch(t *testing.T) {
 	}
 }
 
+// TestScaled: on 480x320 (the ESP32-3248S035C) the menu is 4/3 bigger,
+// and a tap finds the game under it.
+func TestScaled(t *testing.T) {
+	l, d, clock, _, tp := newTest(t, 480, 320)
+	clock.At(100*ms, func() { goldentest.Check(t, "picopad_menu_scaled", d.Image()) })
+	// Where pixel x, y of the menu is drawn.
+	at := func(x, y int) (int16, int16) { return int16(26 + (4*x+2)/3), int16((4*y + 2) / 3) }
+	x, y := at(200, listY+2*rowH+5) // the third of the second column
+	tp.taps = []tap{{300 * ms, x, y}, {600 * ms, x, y}}
+	if i := l.menu(); i != 12 || l.games[i].name != "Vegaslot" {
+		t.Errorf("tap: %d", i)
+	}
+}
+
 // TestPlay plays Tetris, which comes back with Y: the menu is there
 // again, the same.
 func TestPlay(t *testing.T) {

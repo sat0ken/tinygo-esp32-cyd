@@ -614,3 +614,80 @@ func TestRand(t *testing.T) {
 		}
 	}
 }
+
+// TestScaled: on 480x320 the screen is 427x320 in the middle; of every 3
+// columns and rows the first is drawn twice.
+func TestScaled(t *testing.T) {
+	c, d, _, _ := newTest(t, 480, 320)
+	if !c.scaled || c.ox != 26 || c.oy != 0 {
+		t.Fatalf("scaled %v at %d, %d", c.scaled, c.ox, c.oy)
+	}
+	cols := [...]Color{ColRed, ColGreen, ColBlue, ColYellow}
+	for i, col := range cols {
+		c.DrawPoint(i, i, col)
+	}
+	c.DrawPoint(Width-1, Height-1, ColWhite)
+	c.DispUpdate()
+	px := func(x, y int) Color { return Color(d.Pix[y*480+26+x]) }
+	// Screen pixel i is scaled pixels 0-1, 2, 3, 4-5 ...
+	for _, p := range []struct {
+		x, y int
+		col  Color
+	}{
+		{0, 0, ColRed}, {1, 0, ColRed}, {0, 1, ColRed}, {1, 1, ColRed}, {2, 0, ColBlack},
+		{2, 2, ColGreen}, {1, 2, ColBlack}, {3, 3, ColBlue}, {4, 4, ColYellow}, {5, 5, ColYellow},
+		{scaledW - 1, scaledH - 1, ColWhite},
+	} {
+		if got := px(p.x, p.y); got != p.col {
+			t.Errorf("scaled %d, %d: %#04x, want %#04x", p.x, p.y, got, p.col)
+		}
+	}
+	if d.Pix[319*480+25] != 0 || d.Pix[319*480+26+scaledW] != 0 {
+		t.Error("drawn outside the scaled screen")
+	}
+}
+
+// TestScaledParts: the parts DispUpdate sends make the same picture as
+// sending the whole screen.
+func TestScaledParts(t *testing.T) {
+	c, d, _, _ := newTest(t, 480, 320)
+	r := uint32(1)
+	next := func(n int) int {
+		r ^= r << 13
+		r ^= r >> 17
+		r ^= r << 5
+		return int(r % uint32(n))
+	}
+	cols := [...]Color{ColRed, ColGreen, ColBlue, ColWhite, ColCyan}
+	for k := 0; k < 200; k++ {
+		c.DrawRect(next(Width), next(Height), 1+next(9), 1+next(9), cols[next(len(cols))])
+		if k%3 == 0 {
+			c.DispUpdate()
+		}
+	}
+	c.DispUpdate()
+	parts := append([]uint16(nil), d.Pix...)
+	c.DispUpdateAll()
+	for i := range parts {
+		if parts[i] != d.Pix[i] {
+			t.Fatalf("pixel %d, %d: %#04x after the parts, %#04x after all", i%480, i/480, parts[i], d.Pix[i])
+		}
+	}
+}
+
+func TestScreenAt(t *testing.T) {
+	c, _, _, _ := newTest(t, 480, 320)
+	for _, p := range [][4]int{
+		{26, 0, 0, 0}, {27, 1, 0, 0}, {28, 2, 1, 1}, {29, 3, 2, 2}, {30, 4, 3, 3},
+		{26 + scaledW - 1, scaledH - 1, Width - 1, Height - 1},
+		{25, 0, -1, 0}, {26 + scaledW, 0, Width, 0},
+	} {
+		if x, y := c.ScreenAt(int16(p[0]), int16(p[1])); x != p[2] || y != p[3] {
+			t.Errorf("ScreenAt(%d, %d) = %d, %d, want %d, %d", p[0], p[1], x, y, p[2], p[3])
+		}
+	}
+	c2, _, _, _ := newTest(t, 480, 272) // not scaled: moved only
+	if x, y := c2.ScreenAt(80+5, 16+7); c2.scaled || x != 5 || y != 7 {
+		t.Errorf("480x272: ScreenAt = %d, %d (scaled %v)", x, y, c2.scaled)
+	}
+}

@@ -16,7 +16,10 @@
 // the palette again.
 //
 // The 320x240 screen is in the middle of the display (on 480x272, 80
-// pixels from the left and 16 from the top).
+// pixels from the left and 16 from the top). On a display of at least
+// 427x320 (the 480x320 of the ESP32-3248S035C) it is drawn 4/3 bigger, as
+// 427x320: DispUpdate scales the rows as it sends them, the games still
+// draw 320x240.
 package picopad
 
 import (
@@ -32,6 +35,12 @@ import (
 const (
 	Width  = 320
 	Height = 240
+)
+
+// The screen drawn 4/3 bigger, on a display big enough.
+const (
+	scaledW = (Width*4 + 2) / 3 // 427
+	scaledH = Height * 4 / 3    // 320
 )
 
 // bandRows is how many rows DispUpdate converts and sends at a time.
@@ -93,6 +102,7 @@ type Console struct {
 	bd     bitmapDrawer
 	ad     asyncDrawer // nil: send at once
 	ox, oy int16       // where the screen is on the display
+	scaled bool        // drawn 4/3 bigger
 
 	pix    []uint8 // Width*Height palette indices
 	pal    [256]uint16
@@ -127,17 +137,23 @@ var spare struct {
 	bufs [2][]byte
 }
 
-// New returns the console on d (at least 320x240) with the touch panel t
-// (nil: none) and the random seed seed. It clears the display. Set Pad to
-// use a game controller.
+// New returns the console on d (at least 320x240; from 427x320 on, drawn
+// 4/3 bigger) with the touch panel t (nil: none) and the random seed seed.
+// It clears the display. Set Pad to use a game controller.
 func New(d hal.Display, t hal.Touch, seed uint32) *Console {
 	w, h := d.Size()
+	sw, sh := int16(Width), int16(Height)
+	scaled := w >= scaledW && h >= scaledH
+	if scaled {
+		sw, sh = scaledW, scaledH
+	}
 	c := &Console{
-		d:    d,
-		ox:   (w - Width) / 2,
-		oy:   (h - Height) / 2,
-		ncol: 1,            // the frame buffer starts black: index 0
-		font: FontBold8x16, // the default of PicoLibSDK
+		d:      d,
+		ox:     (w - sw) / 2,
+		oy:     (h - sh) / 2,
+		scaled: scaled,
+		ncol:   1,            // the frame buffer starts black: index 0
+		font:   FontBold8x16, // the default of PicoLibSDK
 	}
 	c.bd, _ = d.(bitmapDrawer)
 	c.ad, _ = d.(asyncDrawer)
@@ -149,8 +165,10 @@ func New(d hal.Display, t hal.Touch, seed uint32) *Console {
 		}
 	} else {
 		c.pix = make([]uint8, Width*Height)
-		for k := range c.bufs {
-			c.bufs[k] = make([]byte, Width*bandRows*2)
+	}
+	for k := range c.bufs {
+		if n := int(sw) * bandRows * 2; len(c.bufs[k]) < n {
+			c.bufs[k] = make([]byte, n)
 		}
 	}
 	c.keys.init(t, w, h)
@@ -291,6 +309,11 @@ func (c *Console) DispUpdate() {
 		return
 	}
 	c.DispDirtyNone()
+	if c.scaled {
+		c.updateScaled(x1, x2, y1, y2)
+		c.d.Display()
+		return
+	}
 	w := x2 - x1
 	for y0 := y1; y0 < y2; y0 += bandRows {
 		rows := min(bandRows, y2-y0)
@@ -307,6 +330,54 @@ func (c *Console) DispUpdate() {
 		c.next ^= 1
 	}
 	c.d.Display()
+}
+
+// updateScaled sends columns x1 to x2 and rows y1 to y2 of the screen 4/3
+// bigger: pixel X, Y of the scaled screen is pixel X*3/4, Y*3/4 of the
+// screen, so of every 3 columns (and rows) the first is drawn twice. A row
+// drawn twice is copied.
+func (c *Console) updateScaled(x1, x2, y1, y2 int) {
+	sx1, sx2 := (4*x1+2)/3, (4*x2+2)/3 // the columns showing x1 to x2
+	sy1, sy2 := (4*y1+2)/3, (4*y2+2)/3
+	w := sx2 - sx1
+	for y0 := sy1; y0 < sy2; y0 += bandRows {
+		rows := min(bandRows, sy2-y0)
+		buf := c.bufs[c.next]
+		i := 0
+		for y := y0; y < y0+rows; y++ {
+			if y > y0 && y*3/4 == (y-1)*3/4 {
+				copy(buf[i:i+2*w], buf[i-2*w:i])
+				i += 2 * w
+				continue
+			}
+			row := c.pix[y*3/4*Width:][:Width]
+			for x := sx1; x < sx2; x++ {
+				v := c.pal[row[x*3/4]]
+				buf[i], buf[i+1] = byte(v>>8), byte(v)
+				i += 2
+			}
+		}
+		c.send(int16(sx1), int16(y0), buf[:i], int16(w), int16(rows))
+		c.next ^= 1
+	}
+}
+
+// ScreenAt returns the pixel of the screen at x, y of the display (outside
+// the screen, a point outside 0 to Width-1 or 0 to Height-1).
+func (c *Console) ScreenAt(x, y int16) (int, int) {
+	px, py := int(x-c.ox), int(y-c.oy)
+	if c.scaled {
+		px, py = unscale(px), unscale(py)
+	}
+	return px, py
+}
+
+// unscale returns the screen pixel at scaled pixel v (-1 for v < 0).
+func unscale(v int) int {
+	if v < 0 {
+		return -1
+	}
+	return v * 3 / 4
 }
 
 // DispUpdateAll sends the whole screen.

@@ -9,6 +9,10 @@
 // examples/31_fifteen2 alone). The ESP32-4827S043 and the browser have
 // all 19.
 //
+// The PicoPad's screen is 320x240. On the ESP32-3248S035C (480x320) it is
+// drawn 4/3 bigger, 427x320 (package picopad); on the other boards in the
+// middle of the display.
+//
 // The mini joystick module (platform.InitPad) has the PicoPad's buttons:
 // the stick is the d-pad. Without it, touch the display: in the menu tap
 // the games, in a game it is split into 3 x 3 buttons (package picopad).
@@ -26,9 +30,9 @@ import (
 
 func main() {
 	time.Sleep(500 * time.Millisecond)
-	d, t, err := platform.Init()
+	d, t, err := platform.InitFull() // on the S035, the screen 4/3 bigger
 	if err != nil {
-		println("platform.Init:", err.Error())
+		println("platform.InitFull:", err.Error())
 		platform.Halt()
 	}
 	n := uint32(0)

@@ -131,6 +131,29 @@ func enableHighPins(pins ...uint8) {
 // ESP32-4827S043 runs as it is. Without touch it still returns the
 // display (and a touch panel that is never pressed).
 func Init() (hal.Display, hal.Touch, error) {
+	d, t, err := initBoth()
+	if err != nil {
+		return nil, nil, err
+	}
+	win := viewport.New(d, s035.WindowX, s035.WindowY, s035.WindowW, s035.WindowH)
+	wt := viewport.NewTouch(t, s035.WindowX, s035.WindowY, s035.WindowW, s035.WindowH)
+	return win, flushTouch{wt, d}, nil
+}
+
+// InitFull is Init without the window: the whole 480x320 screen, for the
+// programs that adapt to the screen size (the PicoPad games draw their
+// 320x240 screen 4/3 bigger on it).
+func InitFull() (hal.Display, hal.Touch, error) {
+	d, t, err := initBoth()
+	if err != nil {
+		return nil, nil, err
+	}
+	return d, flushTouch{t, d}, nil
+}
+
+// initBoth initialises the screen and the touch panel (one never pressed
+// if the touch controller does not answer).
+func initBoth() (*spilcd.Device, hal.Touch, error) {
 	d, err := InitScreen()
 	if err != nil {
 		return nil, nil, err
@@ -141,9 +164,7 @@ func Init() (hal.Display, hal.Touch, error) {
 	} else {
 		t = gt
 	}
-	win := viewport.New(d, s035.WindowX, s035.WindowY, s035.WindowW, s035.WindowH)
-	wt := viewport.NewTouch(t, s035.WindowX, s035.WindowY, s035.WindowW, s035.WindowH)
-	return win, flushTouch{wt, d}, nil
+	return d, t, nil
 }
 
 var blPin = machine.Pin(s035.PinBacklight)
