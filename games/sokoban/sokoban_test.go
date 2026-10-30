@@ -186,3 +186,24 @@ func TestKeys(t *testing.T) {
 	quit(p, at+61*time.Second)
 	g.Run()
 }
+
+// TestOneGame: with OneGame, Y from a level back to the authors and once
+// more returns from Run (without the demo).
+func TestOneGame(t *testing.T) {
+	g, _, clock, p := newTest(t, 1)
+	g.OneGame = true
+	at := play(p)
+	clock.At(at, func() {
+		if g.collName != "Microban" || g.level != 0 {
+			t.Errorf("not in Microban 1: %q %d", g.collName, g.level)
+		}
+	})
+	for k := 0; k < 4; k++ {
+		p.Tap(hal.PadY, at+100*ms)
+		at += 300 * ms
+	}
+	g.Run()
+	if clock.T > at+200*ms {
+		t.Errorf("Run returned at %v, the last Y at %v", clock.T, at-200*ms)
+	}
+}

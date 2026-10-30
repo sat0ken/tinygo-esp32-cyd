@@ -144,3 +144,40 @@ func TestDemo(t *testing.T) {
 	g.Run()
 	t.Logf("the demo ended after %v", over)
 }
+
+// TestOneGame: with OneGame, Run returns when the winner is shown and a
+// key pressed, and on Y in a game.
+func TestOneGame(t *testing.T) {
+	g, _, clock, p := newTest(t)
+	g.OneGame = true
+	p.Tap(hal.PadA, 100*ms) // player 1 human, player 2 computer
+	clock.At(300*ms, func() {
+		// player 2's only atom next to the corner, where player 1 has one
+		// and puts the second: the explosion takes it
+		g.atoms[3*mapW+6] = 0
+		g.atoms[1], g.owner[1] = 1, 1
+		g.atoms[0], g.owner[0] = 1, 0
+		g.players[0].atoms++
+		g.players[0].cursor = 0
+	})
+	p.Tap(hal.PadA, 400*ms)
+	clock.At(time.Second, func() {
+		if g.playerNum != 1 {
+			t.Errorf("%d players left", g.playerNum)
+		}
+	})
+	p.Tap(hal.PadB, 2*time.Second) // the winner blinks until a key
+	g.Run()
+	if clock.T < 2*time.Second || clock.T > 3*time.Second {
+		t.Errorf("Run returned at %v", clock.T)
+	}
+
+	g, _, clock, p = newTest(t)
+	g.OneGame = true
+	p.Tap(hal.PadA, 100*ms)
+	p.Tap(hal.PadY, 500*ms)
+	g.Run()
+	if clock.T > time.Second {
+		t.Errorf("Y: Run returned at %v", clock.T)
+	}
+}

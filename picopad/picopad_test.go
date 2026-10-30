@@ -217,6 +217,32 @@ func TestSetPalette(t *testing.T) {
 	}
 }
 
+// TestClose: the next console gets the frame buffer of a closed one,
+// black again.
+func TestClose(t *testing.T) {
+	c, d, _, _ := newTest(t, Width, Height)
+	c.DrawRect(0, 0, Width, Height, ColRed)
+	c.DrawRect(10, 10, 5, 5, ColBlue)
+	c.DispUpdate()
+	pix := &c.pix[0]
+	c.Close()
+	c2 := New(d, nil, 1)
+	if &c2.pix[0] != pix || c2.bufs[0] == nil || c2.bufs[1] == nil {
+		t.Fatal("the buffers are new")
+	}
+	if a, b := c2.DrawGetPoint(12, 12), at(c2, d, 12, 12); a != ColBlack || b != ColBlack {
+		t.Errorf("not black: %#04x, on the display %#04x", a, b)
+	}
+	c2.DrawRect(0, 0, 1, 1, ColYellow)
+	c2.DispUpdate()
+	if a := at(c2, d, 0, 0); a != ColYellow {
+		t.Errorf("drawing: %#04x", a)
+	}
+	if c3 := New(d, nil, 1); &c3.pix[0] == pix {
+		t.Error("c2 was not closed: its buffer is used again")
+	}
+}
+
 func TestDrawImgPalDbl(t *testing.T) {
 	c, _, _, _ := newTest(t, Width, Height)
 	pal := palette(ColBlack, ColRed, ColBlue, ColWhite)

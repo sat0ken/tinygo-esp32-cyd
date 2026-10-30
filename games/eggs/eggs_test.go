@@ -117,3 +117,24 @@ func TestDemo(t *testing.T) {
 	}
 	t.Logf("the demo ended after %v: %v stones, wins %v", ended, g.stones, g.wins)
 }
+
+// TestOneGame: with OneGame, Run returns after the end of a game (the
+// demo, without a key) and on Y in a game.
+func TestOneGame(t *testing.T) {
+	g, _, clock, p := newTest(t)
+	g.OneGame = true
+	p.Tap(hal.PadUp, 100*ms) // the computer plays both
+	g.Run()
+	if g.pos != 0 && g.free != 0 || g.wins[0]+g.wins[1] > 1 {
+		t.Errorf("Run returned at %v before the end of the game", clock.T)
+	}
+
+	g, _, clock, p = newTest(t)
+	g.OneGame = true
+	p.Tap(hal.PadDown, 100*ms) // 2 players
+	p.Tap(hal.PadY, 500*ms)
+	g.Run()
+	if clock.T > time.Second {
+		t.Errorf("Y: Run returned at %v", clock.T)
+	}
+}

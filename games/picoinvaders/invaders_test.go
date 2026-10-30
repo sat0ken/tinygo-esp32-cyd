@@ -129,3 +129,15 @@ func TestGameOver(t *testing.T) {
 		t.Error("no new game after GAME OVER")
 	}
 }
+
+// TestOneGame: with OneGame, Run returns after GAME OVER and a key.
+func TestOneGame(t *testing.T) {
+	g, _, clock, _ := newTest(t, 1)
+	g.OneGame = true
+	p := &overPad{Pad: picotest.Pad{Clock: clock}, g: g}
+	g.Pad = p
+	g.Run()
+	if p.over == 0 || clock.T > p.over+2*time.Second {
+		t.Errorf("Run returned at %v, game over at %v", clock.T, p.over)
+	}
+}

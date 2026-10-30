@@ -367,7 +367,7 @@ func (g *Game) newGame(player1, player2 int) {
 }
 
 // winGame shows the winner; it returns after a key (the demo: after a
-// while) and starts a new game.
+// while) and starts a new game (not with OneGame).
 func (g *Game) winGame(pl int) {
 	g.endGame = pl
 	h := min(g.players[pl].par[parCastle], castleMax)
@@ -410,6 +410,9 @@ func (g *Game) winGame(pl int) {
 		g.DispUpdate()
 		g.WaitMs(30)
 		g.RestoreRect(g.saveWinBuf[:], x, y, winW, winH)
+	}
+	if g.OneGame { // game returns
+		return
 	}
 	g.newGame(g.players[0].player, g.players[1].player)
 }
@@ -590,7 +593,8 @@ func (g *Game) autoPlay() {
 	g.putCard(i, g.players[g.player].disable[i])
 }
 
-// game plays until Y (a key in the demo).
+// game plays until Y (a key in the demo); with OneGame until the winner
+// has danced.
 func (g *Game) game(player1, player2 int) {
 	g.endGame = -1
 	g.newGame(player1, player2)
@@ -640,6 +644,9 @@ func (g *Game) game(player1, player2 int) {
 			default:
 				g.KeyFlush()
 			}
+		}
+		if g.OneGame && g.endGame >= 0 {
+			return
 		}
 		g.dispFlag()
 		g.DispUpdate()

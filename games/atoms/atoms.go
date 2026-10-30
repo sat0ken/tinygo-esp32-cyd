@@ -490,7 +490,8 @@ func (g *Game) game() {
 }
 
 // Run plays until Y on the first screen (main of the C source, which then
-// resets to the boot loader).
+// resets to the boot loader). With OneGame it returns after a game (the
+// winner shown, or Y).
 func (g *Game) Run() {
 	for {
 		if !g.open() {
@@ -499,6 +500,9 @@ func (g *Game) Run() {
 		g.newGame()
 		if g.playerNum > 1 {
 			g.game()
+			if g.OneGame {
+				return
+			}
 		}
 	}
 }

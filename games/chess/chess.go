@@ -1060,7 +1060,8 @@ func field(pos uint8) string {
 }
 
 // Run plays until Y on the first screen (main of the C source, which then
-// resets to the boot loader).
+// resets to the boot loader). With OneGame it returns after a game
+// (checkmate and a key, or Y).
 func (g *Game) Run() {
 	g.deepMaxN = 4
 	for {
@@ -1120,6 +1121,9 @@ func (g *Game) Run() {
 			if g.player == whitePlayer {
 				g.moveNum++
 			}
+		}
+		if g.OneGame { // checkmate or Y
+			return
 		}
 	}
 }

@@ -320,10 +320,14 @@ func (g *Game) open() bool {
 }
 
 // Run plays until Y on the title (main of the C source, which then resets
-// to the boot loader).
+// to the boot loader). With OneGame it returns after a game (the last
+// ship, or Y).
 func (g *Game) Run() {
 	for g.open() {
 		g.game()
+		if g.OneGame {
+			return
+		}
 	}
 }
 

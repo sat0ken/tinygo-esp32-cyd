@@ -164,3 +164,15 @@ func TestCancelPick(t *testing.T) {
 	p.Tap(hal.PadY, 1600*ms)
 	g.Run()
 }
+
+// TestOneGame: with OneGame, Y in a game returns from Run.
+func TestOneGame(t *testing.T) {
+	g, _, clock, p := newTest(t, 3)
+	g.OneGame = true
+	p.Tap(hal.PadLeft, 200*ms) // play white
+	p.Tap(hal.PadY, 400*ms)
+	g.Run()
+	if clock.T > 600*ms {
+		t.Errorf("Run returned at %v", clock.T)
+	}
+}
