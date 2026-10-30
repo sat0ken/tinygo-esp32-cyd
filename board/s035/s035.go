@@ -6,10 +6,10 @@
 // or S3) with 4MB flash and no PSRAM, so the TinyGo target inherits
 // esp32-generic. On the V1.4 board the footprint of the extra flash chip
 // (U4) is empty. Connectors on the back: P1 (GND, RXD, TXD, 5V as printed
-// on the board), P3 (GND, IO35, IO22, IO21), CN1 (GND, IO22, IO21, 3.3V),
-// P4 (GND, 3V3, IO17, IO18 as printed on the board; examples/joystick_check
-// puts I2C there), a speaker connector, and TP-C for the touch panel (GND,
-// SDA, SCL, RST, INT, VDD).
+// on the board), P3 (GND, IO35, IO22, IO21), CN1 (GND, IO22, IO21, 3.3V;
+// the joystick module is there), P4 (GND, 3V3, IO17, IO18 as printed on
+// the board), a speaker connector, and TP-C for the touch panel (GND, SDA,
+// SCL, RST, INT, VDD).
 //
 // The panel is used in landscape, 480x320. The ESP32 has no PSRAM and too
 // little RAM for a frame buffer, so drawing goes straight to the panel over
@@ -121,11 +121,14 @@ const (
 )
 
 // Mini joystick module (package minijoy) as a game controller: I2C on
-// connector P4 (GND, 3V3, IO17, IO18), in the module's order. Not checked
-// on the board yet. IO18 is also the microSD slot's SCK.
+// connector CN1 (GND, IO22, IO21, 3.3V from the top), SDA on IO21 and SCL
+// on IO22 (checked on the board with a bit-banged scan; the other way
+// round finds nothing). The module's order is G, V, SDA, SCL, so the wires
+// cross. IO21 is also the GT911's INT according to rzeldent; the touch
+// still works, and the GT911's address is found either way.
 const (
-	PinJoySDA = 17
-	PinJoySCL = 18
+	PinJoySDA = 21
+	PinJoySCL = 22
 )
 
 // Serial console: UART0 (GPIO1 TX / GPIO3 RX) through the CH340C USB-UART.
