@@ -718,7 +718,7 @@ func (g *Game) selectColl(i int) {
 }
 
 // Run plays until Y held in the demo (main of the C source, which then
-// resets to the boot loader).
+// resets to the boot loader). With OneGame, Y on the authors returns.
 func (g *Game) Run() {
 	g.setTileMode(0)
 	g.DispUpdate()
@@ -759,6 +759,9 @@ func (g *Game) Run() {
 					g.gameLoop()
 				}
 			}
+		}
+		if g.OneGame { // Y on the authors: a puzzle has no game over
+			return
 		}
 	}
 }

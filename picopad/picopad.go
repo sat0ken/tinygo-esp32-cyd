@@ -112,6 +112,19 @@ type Console struct {
 
 	keys
 	rand uint64
+
+	// OneGame makes the Run of a game return at the end of a game (game
+	// over, the end of a match, or the game left with its quit button)
+	// instead of going back to the game's own title or demo: for a
+	// launcher of the games. Puzzles go on to the next puzzle as before.
+	OneGame bool
+}
+
+// spare are the buffers of the last console closed, for the next New (a
+// launcher makes one console after another: it allocates them once).
+var spare struct {
+	pix  []uint8
+	bufs [2][]byte
 }
 
 // New returns the console on d (at least 320x240) with the touch panel t
@@ -123,14 +136,22 @@ func New(d hal.Display, t hal.Touch, seed uint32) *Console {
 		d:    d,
 		ox:   (w - Width) / 2,
 		oy:   (h - Height) / 2,
-		pix:  make([]uint8, Width*Height),
 		ncol: 1,            // the frame buffer starts black: index 0
 		font: FontBold8x16, // the default of PicoLibSDK
 	}
 	c.bd, _ = d.(bitmapDrawer)
 	c.ad, _ = d.(asyncDrawer)
-	for k := range c.bufs {
-		c.bufs[k] = make([]byte, Width*bandRows*2)
+	if spare.pix != nil {
+		c.pix, c.bufs = spare.pix, spare.bufs
+		spare.pix, spare.bufs = nil, [2][]byte{}
+		for i := range c.pix {
+			c.pix[i] = 0
+		}
+	} else {
+		c.pix = make([]uint8, Width*Height)
+		for k := range c.bufs {
+			c.bufs[k] = make([]byte, Width*bandRows*2)
+		}
 	}
 	c.keys.init(t, w, h)
 	c.randInit(seed)
@@ -138,6 +159,17 @@ func New(d hal.Display, t hal.Touch, seed uint32) *Console {
 	d.FillRectangle(0, 0, w, h, color.RGBA{0, 0, 0, 255})
 	d.Display()
 	return c
+}
+
+// Close gives the frame buffer of c to the next New (after the last
+// band has gone out). c must not be used after it.
+func (c *Console) Close() {
+	if c.ad != nil {
+		c.ad.Wait()
+	}
+	spare.pix, spare.bufs = c.pix, c.bufs
+	c.pix, c.bufs = nil, [2][]byte{}
+	c.tables, c.colors, c.shadows = nil, nil, [16]*shadowTab{}
 }
 
 // index returns the frame buffer index of col, giving it one if it has

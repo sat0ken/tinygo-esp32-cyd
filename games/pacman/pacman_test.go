@@ -196,3 +196,27 @@ func TestFruit(t *testing.T) {
 		t.Errorf("fruit %d, %d frames", g.fruitSpriteImg, g.fruitCnt)
 	}
 }
+
+// TestOneGame: with OneGame, Run returns after the last life, and on Y in
+// the game (the open screen takes about 19.5 seconds, READY 4).
+func TestOneGame(t *testing.T) {
+	g, _, clock, _ := newTest(t, 1)
+	g.OneGame = true
+	var playing bool
+	clock.At(25*time.Second, func() {
+		playing = g.lives == 4 && g.chars[chPacman].x != width
+		g.lives = 0 // the next ghost ends the game
+	})
+	g.Run()
+	if !playing || g.lives > 0 || g.quit || clock.T > 3*time.Minute {
+		t.Errorf("Run returned at %v (playing %v, %d lives)", clock.T, playing, g.lives)
+	}
+
+	g, _, clock, p := newTest(t, 1)
+	g.OneGame = true
+	p.Tap(hal.PadY, 26*time.Second)
+	g.Run()
+	if g.quit || clock.T < 26*time.Second || clock.T > 27*time.Second {
+		t.Errorf("Y: Run returned at %v (quit on the open screen %v)", clock.T, g.quit)
+	}
+}

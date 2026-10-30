@@ -142,7 +142,8 @@ func (g *Game) dispOpenSel() {
 }
 
 // Run plays until Y on the open screen (main of the C source, which then
-// resets to the boot loader).
+// resets to the boot loader). With OneGame it returns after a game (the
+// winner, or Y).
 func (g *Game) Run() {
 	g.dispOpen()
 	g.dispOpenSel()
@@ -172,6 +173,9 @@ func (g *Game) Run() {
 				g.game(playerComp, playerHuman)
 			case 3:
 				g.game(playerComp, playerComp)
+			}
+			if g.OneGame {
+				return
 			}
 			g.dispOpen()
 			g.dispOpenSel()

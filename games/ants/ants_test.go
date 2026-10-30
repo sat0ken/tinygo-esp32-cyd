@@ -152,3 +152,34 @@ func TestCards(t *testing.T) {
 		}
 	}
 }
+
+// TestOneGame: with OneGame, Run returns when the winner has danced (a
+// key), and on Y in a game.
+func TestOneGame(t *testing.T) {
+	g, _, clock, p := newTest(t, 1)
+	g.OneGame = true
+	p.Tap(hal.PadRight, 400*ms) // the black ants against the computer
+	p.Tap(hal.PadA, 600*ms)
+	clock.At(1200*ms, func() { g.players[1].par[parCastle] = 0 }) // the next card wins
+	p.Tap(hal.PadA, 1400*ms)
+	clock.At(5*time.Second, func() {
+		if g.endGame != 0 {
+			t.Errorf("the winner: %d", g.endGame)
+		}
+	})
+	p.Tap(hal.PadB, 6*time.Second) // ends the dance
+	g.Run()
+	if clock.T < 6*time.Second || clock.T > 6500*ms {
+		t.Errorf("Run returned at %v", clock.T)
+	}
+
+	g, _, clock, p = newTest(t, 1)
+	g.OneGame = true
+	p.Tap(hal.PadRight, 400*ms)
+	p.Tap(hal.PadA, 600*ms)
+	p.Tap(hal.PadY, 1400*ms)
+	g.Run()
+	if clock.T > 1800*ms {
+		t.Errorf("Y: Run returned at %v", clock.T)
+	}
+}

@@ -198,3 +198,16 @@ func TestHelp(t *testing.T) {
 	p.Hold(hal.PadY, 28*time.Second, 400*ms) // held: the demo reads the keys between its steps
 	g.Run()
 }
+
+// TestOneGame: with OneGame, Y in the game returns from Run (not to the
+// demo).
+func TestOneGame(t *testing.T) {
+	g, _, clock, p := newTest(t, 1)
+	g.OneGame = true
+	p.Tap(hal.PadB, 100*ms) // level 1
+	p.Tap(hal.PadY, time.Second)
+	g.Run()
+	if clock.T > 1500*ms {
+		t.Errorf("Run returned at %v", clock.T)
+	}
+}

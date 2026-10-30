@@ -124,3 +124,15 @@ func TestDemo(t *testing.T) {
 	p.Tap(hal.PadY, 121500*ms)
 	g.Run()
 }
+
+// TestOneGame: with OneGame, Y in a game returns from Run.
+func TestOneGame(t *testing.T) {
+	g, _, clock, p := newTest(t)
+	g.OneGame = true
+	p.Tap(hal.PadDown, 200*ms) // 2 players
+	p.Tap(hal.PadY, time.Second)
+	g.Run()
+	if clock.T > 1200*ms {
+		t.Errorf("Run returned at %v", clock.T)
+	}
+}

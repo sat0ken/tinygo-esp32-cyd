@@ -290,7 +290,8 @@ func (g *Game) titleScreen() bool {
 }
 
 // Run plays until the end in the menu of the title (main of the C source,
-// which then resets to the boot loader).
+// which then resets to the boot loader). With OneGame it returns after a
+// game (the last life, or the end in the menu of the game).
 func (g *Game) Run() {
 	g.maxScore = g.top[0].score
 	for {
@@ -301,6 +302,9 @@ func (g *Game) Run() {
 		// StopAllSound()
 		if g.life <= 0 || g.score > g.maxScore {
 			g.gameEnd()
+		}
+		if g.OneGame {
+			return
 		}
 	}
 }

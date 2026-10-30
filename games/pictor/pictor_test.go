@@ -269,3 +269,23 @@ func TestNewArt(t *testing.T) {
 	draw()
 	goldentest.Check(t, "pictor_galaxy", d.Image())
 }
+
+// TestOneGame: with OneGame, Run returns after the end of the game (the
+// last life: Game Over and a key).
+func TestOneGame(t *testing.T) {
+	g, _, clock, p := newTest(t, 1)
+	g.OneGame = true
+	p.Tap(hal.PadA, 200*ms)  // the title
+	p.Tap(hal.PadA, 2300*ms) // the start of the scene
+	clock.At(3*time.Second, func() { g.life = 0 })
+	clock.At(4500*ms, func() {
+		if g.life > 0 {
+			t.Error("the game goes on")
+		}
+	})
+	p.Tap(hal.PadB, 6*time.Second) // Game Over: any key
+	g.Run()
+	if clock.T < 6*time.Second || clock.T > 6500*ms {
+		t.Errorf("Run returned at %v", clock.T)
+	}
+}

@@ -856,7 +856,8 @@ func (g *Game) step() bool {
 }
 
 // Run plays until Y on the open screen (main of the C source, which then
-// resets to the boot loader).
+// resets to the boot loader). With OneGame it returns after a game (the
+// last life, or Y).
 func (g *Game) Run() {
 	g.lastTime = g.Time()
 	g.maxScore = 0
@@ -867,5 +868,8 @@ func (g *Game) Run() {
 			return
 		}
 		g.openGame()
+		if g.OneGame {
+			return
+		}
 	}
 }

@@ -146,3 +146,23 @@ func TestScreens(t *testing.T) {
 	p.Tap(hal.PadY, 2*time.Second)
 	g.Run()
 }
+
+// TestOneGame: with OneGame, Run returns 3 s after the ship is lost, and
+// on Y.
+func TestOneGame(t *testing.T) {
+	g, _, clock, _ := newTest(t, 1)
+	g.OneGame = true
+	clock.At(time.Second, func() { g.shields = -1 })
+	g.Run()
+	if clock.T < 3900*ms || clock.T > 4300*ms {
+		t.Errorf("Run returned at %v", clock.T)
+	}
+
+	g, _, clock, p := newTest(t, 1)
+	g.OneGame = true
+	p.Tap(hal.PadY, time.Second)
+	g.Run()
+	if clock.T > 1300*ms {
+		t.Errorf("Y: Run returned at %v", clock.T)
+	}
+}

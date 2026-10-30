@@ -658,7 +658,7 @@ func (g *Game) gameLoop() bool {
 }
 
 // Run plays until Y in the demo (main of the C source, which then resets
-// to the boot loader).
+// to the boot loader). With OneGame, Y in the game returns.
 func (g *Game) Run() {
 	g.DrawClear()
 	g.level = levFirst
@@ -684,6 +684,9 @@ func (g *Game) Run() {
 		g.initLevel()
 		for !g.gameLoop() {
 			g.waitStep()
+		}
+		if g.OneGame { // Y: the game has no end
+			return
 		}
 	}
 }

@@ -730,13 +730,13 @@ func (g *Game) game() bool {
 }
 
 // Run plays until Y (main of the C source, which then resets to the boot
-// loader).
+// loader). With OneGame it returns after GAME OVER (and a key) too.
 func (g *Game) Run() {
 	g.maxScore = 0
 	for {
 		g.newGame(0)
 		g.WaitMs(2000)
-		if !g.game() {
+		if !g.game() || g.OneGame {
 			return
 		}
 	}

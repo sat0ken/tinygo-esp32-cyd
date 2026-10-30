@@ -686,9 +686,17 @@ func (g *Game) display() {
 }
 
 // Run plays until Y (main of the C source, which then resets to the boot
-// loader).
+// loader). The C game goes on with the ship burning after the last
+// shield; with OneGame Run returns 3 s after it.
 func (g *Game) Run() {
 	g.newGame()
+	dead := 0
 	for g.step() {
+		if g.OneGame && g.shields < 0 {
+			dead++
+			if dead >= 30 { // frames of 100 ms
+				return
+			}
+		}
 	}
 }

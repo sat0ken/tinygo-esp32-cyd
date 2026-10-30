@@ -209,3 +209,36 @@ func TestGameOver(t *testing.T) {
 		t.Errorf("checkEnd returned at %v, before the key", clock.T)
 	}
 }
+
+// TestOneGame: with OneGame, Run returns after the game over (and a key)
+// and on Y in a game, without the demo.
+func TestOneGame(t *testing.T) {
+	g, _, clock, p := newTest(t, 320, 240)
+	g.OneGame = true
+	p.Tap(hal.PadA, sec) // the end of the pause
+	clock.At(2*sec, func() {
+		// the field full but for one place in each row: the next brick
+		// does not fit
+		for y := 1; y < mapH-1; y++ {
+			for x := 8; x < 18; x++ {
+				if x != 8+y%10 {
+					g.board[x+y*mapW] = 2
+				}
+			}
+		}
+	})
+	p.Tap(hal.PadB, 8*sec) // after GAME OVER
+	g.Run()
+	if g.demo || clock.T < 8*sec || clock.T > 9*sec {
+		t.Errorf("Run returned at %v (demo %v)", clock.T, g.demo)
+	}
+
+	g, _, clock, p = newTest(t, 320, 240)
+	g.OneGame = true
+	p.Tap(hal.PadA, sec)
+	p.Tap(hal.PadY, 3*sec)
+	g.Run()
+	if g.demo || clock.T > 4*sec {
+		t.Errorf("Y: Run returned at %v (demo %v)", clock.T, g.demo)
+	}
+}
