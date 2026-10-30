@@ -26,6 +26,7 @@ ESP32-4827S043（ESP32-S3 + 4.3インチ 480×272 RGB 液晶）を TinyGo で動
 15. [ESP32-3248S035C（3.5インチ・SPI 液晶）](#15-esp32-3248s035c35インチspi-液晶)
 16. [ESP32-2432S028R（2.8インチ・320×240）](#16-esp32-2432s028r28インチ320240)
 17. [PicoPad のゲームの移植（picopad、15）](#17-picopad-のゲームの移植picopad15)
+18. [Claude Code の使用量（ccmeter・ccbridge）](#18-claude-code-の使用量ccmeterccbridge)
 
 ---
 
@@ -81,6 +82,7 @@ ESP32-4827S043（ESP32-S3 + 4.3インチ 480×272 RGB 液晶）を TinyGo で動
 | [games/](../games/) | ゲーム本体（invaders・sudoku・othello・solitaire・poker・kart・starguard）とトランプの部品（cards）。hal だけに依存 | 全部 |
 | [cmd/app/](../cmd/app/main.go) | 実機・ブラウザ共通のエントリポイント | 全部 |
 | [cmd/games/](../cmd/games/main.go) | ゲームを選んで遊ぶランチャー | 全部 |
+| [cmd/ccmeter/](../cmd/ccmeter/meter.go)・[ccproto/](../ccproto/ccproto.go)・[tools/ccbridge/](../tools/ccbridge/main.go) | Claude Code の使用量の画面、PC から送る行の形式、PC 側で集めて送るプログラム（[18章](#18-claude-code-の使用量ccmeterccbridge)） | 実機・ブラウザ／ホスト |
 | [examples/](../examples/) | 01〜08 のサンプル | 例ごとに異なる |
 | [internal/](../internal/) | テスト補助（goldentest）、C 用 malloc 補助（espmalloc） | — |
 | [tools/](../tools/) | 画像変換（img2rgb565）、HTTP サーバ（serve）、ブラウザ検査（wasmcheck） | ホスト |
@@ -1052,3 +1054,26 @@ PICTOR（32）は映画のキャラクターの絵 5 つとタイトルの販売
 5. 乱数で動くゲームは、C のゲームの部分を描画の空の関数とともにホストでコンパイルし（`games/<名前>/testdata/csim`）、同じ乱数と同じボタンで毎フレームの状態のチェックサムを比べると、写し間違いが見つかる（PACMAN・VEGASLOT・RAPTOR・ANTS・PICTOR）。1 回の呼び出しの引数で乱数を 2 つ以上取る所は評価の順に気を付ける（ARM の GCC は左から、x86 の GCC は右から）。
 6. 他社の作品の絵は、[internal/pixelart](../internal/pixelart/pixelart.go) で同じ大きさのドット絵を描いて替える（PICTOR・ZOOM の `artgen`）。
 7. 選ぶ画面に入れるときは、`Run` がゲームの終わりで `OneGame` を見て戻るようにし（`TestOneGame`）、[cmd/picopad](../cmd/picopad/launcher.go) の `entries` に足す。4MB のフラッシュに収まるかは `make examples-s028` のリンクで分かる。
+
+## 18. Claude Code の使用量（ccmeter・ccbridge）
+
+PC の Claude Code の使用量を液晶に出す。使い方は README の「Claude Code の使用量」。
+
+```
+Claude Code ──ステータスラインの JSON──▶ ccbridge statusline ──▶ ~/.cache/ccmeter/status.json
+~/.claude/projects/*/*.jsonl（会話ログ）─────────────────────────┐        │
+                                                                 ▼        ▼
+                                                     ccbridge serve（5 秒ごと）
+                                                                 │ USB シリアル 115200 baud（ccproto の U 行・T 行）
+                                                                 ▼
+                                                     cmd/ccmeter（基板）
+```
+
+- **なぜシリアルか**：使用量のもとは PC にあり、基板は USB で PC につながっている。TinyGo の ESP32 で Wi-Fi を使わなくて済む。
+- **使用率のもと**：プランの 5 時間枠・週の使用率は、ステータスラインの JSON の `rate_limits`（`used_percentage`・`resets_at`）にしかない（会話ログの `quotaLimits` は制限に当たったときだけ書かれる）。ステータスラインのコマンドはセッションごとに呼ばれるので、`ccbridge statusline` は最後の報告を 1 つのファイルにまとめる。報告に枠がないとき（新しいセッションの最初の応答の前、リセット後）は、前の値をリセットの時刻まで残す（[status.go](../tools/ccbridge/status.go) の `merge`）。ファイルは一時ファイルに書いて `rename` するので、`serve` が書きかけを読むことはない。
+- **トークン数**：会話ログの `type: "assistant"` の行の `message.usage` の 4 つ（入力・出力・キャッシュ作成・キャッシュ読み込み）の合計。1 つの応答は内容のブロックごとに 1 行ずつ書かれ（このリポジトリのログでは 2,844 行が 1,174 応答）、再開した会話は前の応答をコピーするので、`message.id` と `requestId` の組で 1 回だけ数える（行によって `output_tokens` が小さいことがあるので、大きい方）。25 時間以内に書かれたログだけを、前回読んだ位置から読み、改行で終わっていない最後の行は次に回す（[tokens.go](../tools/ccbridge/tokens.go)）。58MB のログを最初に読むのに約 0.1 秒。
+- **行の長さ**：TinyGo の ESP32 の UART は受信を割り込みで 128 バイトのリングバッファに入れる（`machine/buffer_generic.go`）。基板が液晶に描いている間（数十 ms）に読めない分はここに貯まるだけなので、1 行を 127 バイト以内（`ccproto.MaxLine`、名前は 20 文字で切る）にし、U 行と T 行の間を 0.2 秒あける。115200 baud では 128 バイトが約 11ms で届く。
+- **時間**：基板には時計がないので、U 行に PC の地方時（`t`）と、リセットまでの秒数（`h`・`w` の 2 つ目）を入れる。基板は U 行が届いてからの経過時間を足して、時刻と残り時間を進める。曜日は 1970-01-01（木曜日）からの日数で出す。
+- **再描画**：SPI の液晶にはフレームバッファがないので、文字の欄（`text`）ごとに表示中の文字列を持ち、変わった欄だけ背景で塗ってから描き直す。棒グラフ（`gauge`）は割合、時間ごとの棒は 24 個の段階が変わったときだけ描く。
+- **割り当てなし**：受け取り（`Feed`・`ccproto.Parse`）と描き直し（`Update`）はヒープを使わない（名前が変わったときの `string` だけ）。`tinyfont.WriteLine` は呼ぶたびに色のスライスと `RotatedDisplay` をインターフェースに入れるので 2 回割り当てる。そこで `writeLine`（グリフを直接描く、改行なし）を使う。`go test` の `TestNoAllocs` と `-print-allocs`（`NewMeter` の 1 回だけ）で確かめる。
+- **ポート**：`ccbridge serve` は `O_NONBLOCK` で開いて termios を raw・115200 にする（Linux の `TCGETS`・`TCSETS`、外部パッケージなし）。HUPCL を外すので、閉じても DTR・RTS は下がらない。開いたときも DTR と RTS が一緒に立つので、CYD の自動リセット回路（EN と IO0）は動かない（実機で、開き直しても起動メッセージが出ないことを確認）。基板の出力は読み捨てる（`-v` で表示）。

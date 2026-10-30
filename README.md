@@ -38,6 +38,8 @@ app/          アプリ本体（hal だけに依存）とゴールデン画像�
 cmd/app/      実機・wasm 共通のエントリポイント
 cmd/games/    ゲーム（08〜14）を選ぶ画面
 cmd/picopad/  PicoPad から移植したゲーム（15〜33）を選ぶ画面
+cmd/ccmeter/  Claude Code の使用量を出す画面（PC の tools/ccbridge から USB シリアルで受け取る）
+ccproto/      ccbridge から ccmeter に送る行の形式
 web/          index.html（app.wasm と wasm_exec.js は make wasm で生成）
 examples/     01_backlight, 02_colorbars, 03_tinydraw, 04_touch
 testdata/golden/  ゴールデン画像
@@ -45,6 +47,7 @@ targets/esp32-4827s043.json  カスタムターゲット（esp32s3-generic 継�
 targets/esp32-3248s035c.json ESP32-3248S035C のターゲット（esp32-generic 継承）
 tools/serve   wasm 用の簡易 HTTP サーバ（application/wasm で配信）
 tools/picoimg PicoLibSDK の画像・フォントの C の配列を Go の文字列定数に変換（フラッシュに置かれる）
+tools/ccbridge Claude Code の使用量を集めて基板に送る（PC で動かす）
 ```
 
 ## 実機への書き込み
@@ -305,6 +308,44 @@ make wasm PKG=./cmd/picopad && make serve   # ブラウザ
 - **Y で戻る**：ゲームの途中でも Y で戻る（ゲームの最初の画面の Y も）。PICTOR は Y でゲームのメニューを出して X。終わりのないゲーム（迷路・15 パズル・ライフゲーム・TV テニス・列車・スロット・カーレース）とパズルの続き（迷路・15 パズルは解くと次の問題）は Y で戻る。倉庫番は面から Y で面の一覧・集の一覧・作者の一覧と戻り、作者の一覧で Y。絵の 15 パズルはゲームで Y、絵の一覧で Y。
 - **フラッシュ**：ESP32-2432S028R・ESP32-3248S035C はフラッシュが 4MB で、19 本全部（約 4.8MB）は入らない。絵の 15 パズル（絵が 1.1MB）を外した 18 本で約 3.7MB（`cmd/picopad/nofifteen2.go`、ビルドタグ）。絵の 15 パズルは `examples/31_fifteen2` で単独で動く。ESP32-4827S043（16MB）とブラウザは 19 本（約 4.7MB）。
 - **RAM**：ゲームを始めるたびにフレームバッファ（75KB）を作り直さないように、終わったゲームのフレームバッファを次の画面に回す（`picopad.Console.Close`）。
+
+## Claude Code の使用量（cmd/ccmeter）
+
+PC で使っている Claude Code の使用量を液晶に出す。PC の [tools/ccbridge](tools/ccbridge/main.go) が、USB シリアル（115200 baud）で 5 秒ごとに送る。
+
+![ESP32-3248S035C の画面](testdata/golden/ccmeter_480x320.png)
+
+| 表示 | 中身 | どこから |
+|---|---|---|
+| 5-HOUR LIMIT・WEEKLY LIMIT | プランの 5 時間枠と週の使用率、リセットの時刻（週は曜日も）と残り時間。50% から黄、80% から赤 | ステータスラインの `rate_limits`（claude.ai のプランのときだけ） |
+| CONTEXT | 最後に応答したセッションのコンテキストの使用率と、そのプロジェクトのディレクトリ名 | ステータスラインの `context_window` |
+| TOKENS / HOUR | 直近 24 時間の 1 時間ごとのトークン数（右端のオレンジが今の時間）、今の 5 時間枠と 24 時間の合計 | 会話ログ `~/.claude/projects/*/*.jsonl`（入力・出力・キャッシュの合計） |
+| 右上 | モデル名と PC の時刻 | ステータスライン・PC の時計 |
+| 下 | PC とのつながりと、ステータスラインが最後に報告してからの時間 | — |
+
+```sh
+make flash-s035 PKG=./cmd/ccmeter          # ESP32-3248S035C（480×320）
+make flash-s028 PKG=./cmd/ccmeter          # ESP32-2432S028R（320×240）
+make flash-noerase PKG=./cmd/ccmeter       # ESP32-4827S043（480×272）
+make wasm PKG=./cmd/ccmeter && make serve  # ブラウザ（サンプルのデータ）
+
+GOBIN=~/.local/bin go install ./tools/ccbridge
+ccbridge serve -port /dev/ttyUSB0          # 送り続ける（-v で送った行と基板の出力も出す）
+ccbridge print                             # 送る行を一度だけ表示
+```
+
+使用率はステータスラインから取るので、`~/.claude/settings.json` に足す（パスは `go install` で入れた場所）：
+
+```json
+"statusLine": {"type": "command", "command": "/home/you/.local/bin/ccbridge statusline"}
+```
+
+- Claude Code は応答のあと、ステータスラインのコマンドを JSON を渡して実行する。`ccbridge statusline` は使用率・コンテキスト・モデル名を `~/.cache/ccmeter/status.json` に残し、ステータスライン（`Opus 5.5 | ctx 63% | 5h 42% | 7d 17%`）を返す。使用率は、この PC で Claude Code が応答したときにしか新しくならない（ほかの PC や claude.ai で使った分は、次の応答で反映される）。新しいセッションの最初の応答までは、前の値をリセットまで使う。リセットの時刻を過ぎた枠は 0% にする。
+- 端末の `claude` では、起動したときと応答のあとにステータスラインのコマンドが呼ばれる（実機で確認：起動しただけで 5 時間枠と週の使用率が出た。コンテキストの使用率は最初のメッセージまで `--`）。VSCode 拡張（2.1.312）からは呼ばれなかったので、VSCode だけで使っている間は使用率が新しくならない（トークン数は会話ログから出るので新しくなる）。
+- トークン数：1 つの応答はログに何行にも分けて書かれ、再開した会話は前の応答を自分のログにコピーする。応答はメッセージ ID とリクエスト ID で 1 回だけ数える。ログは前回から増えた分だけ読む。
+- `ccbridge serve` はシリアルポートを開いたままにする（USB シリアルの自動サスペンドで基板が切れることもなくなる）。**基板に書き込む前に止める**（開いたままだと書き込みが失敗する）。基板を抜いたりリセットしたりしても、つなぎ直す。ポートを開いても基板はリセットされない（実機で確認）。シリアルは今は Linux だけ。
+- 基板は 20 秒何も届かないと、下に「No data from ccbridge for …」と出す（時刻とリセットまでの時間は基板が進める）。
+- 送る行の形式は [ccproto](ccproto/ccproto.go)。基板は描いている間に 128 バイト（TinyGo の UART の受信バッファ）しか貯められないので、1 行を 127 バイトまでにして、2 行を 0.2 秒あけて送る。
 
 ## ブラウザ（wasm）で動かす
 

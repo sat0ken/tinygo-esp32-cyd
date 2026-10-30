@@ -20,7 +20,7 @@ S035_PKGS := ./examples/s035_check ./examples/03_tinydraw ./examples/07_breakout
 	./examples/19_tvtennis ./examples/20_atoms ./examples/21_chess ./examples/22_eggs \
 	./examples/23_train ./examples/24_picoinvaders ./examples/25_pacman ./examples/26_sokoban \
 	./examples/27_vegaslot ./examples/28_raptor ./examples/29_ants ./examples/30_ghostrac \
-	./examples/31_fifteen2 ./examples/32_pictor ./examples/33_zoom
+	./examples/31_fifteen2 ./examples/32_pictor ./examples/33_zoom ./cmd/ccmeter
 
 # ESP32-2432S028R (2.8" ILI9341 320x240, XPT2046 touch): only the programs
 # that adapt to the screen size (the games need 480x272).
@@ -32,7 +32,7 @@ S028_PKGS := ./examples/s028_check ./examples/08_invaders ./examples/09_sudoku \
 	./examples/19_tvtennis ./examples/20_atoms ./examples/21_chess ./examples/22_eggs \
 	./examples/23_train ./examples/24_picoinvaders ./examples/25_pacman ./examples/26_sokoban \
 	./examples/27_vegaslot ./examples/28_raptor ./examples/29_ants ./examples/30_ghostrac \
-	./examples/31_fifteen2 ./examples/32_pictor ./examples/33_zoom
+	./examples/31_fifteen2 ./examples/32_pictor ./examples/33_zoom ./cmd/ccmeter
 
 .PHONY: flash flash-noerase flash-slides flash-s035 flash-s028 monitor build examples examples-s035 examples-s028 wasm serve test test-browser update-golden slides clean
 
@@ -80,6 +80,7 @@ examples:
 	@echo "== cmd/app"; tinygo build -target=$(TARGET) -size short -o /dev/null ./cmd/app
 	@echo "== cmd/games"; tinygo build -target=$(TARGET) -size short -o /dev/null ./cmd/games
 	@echo "== cmd/picopad"; tinygo build -target=$(TARGET) -size short -o /dev/null ./cmd/picopad
+	@echo "== cmd/ccmeter"; tinygo build -target=$(TARGET) -size short -o /dev/null ./cmd/ccmeter
 
 ## ESP32-3248S035C ---------------------------------------------------------
 
@@ -144,7 +145,7 @@ test-browser: wasm
 # Rewrite testdata/golden/*.png after an intended UI change. Check the new
 # images before committing them.
 update-golden:
-	go test ./app ./cmd/games ./examples/05_slideshow ./examples/07_breakout ./games/... -update
+	go test ./app ./cmd/games ./cmd/ccmeter ./examples/05_slideshow ./examples/07_breakout ./games/... -update
 
 # Convert examples/05_slideshow/images/* to examples/05_slideshow/slides.pack.
 slides:
