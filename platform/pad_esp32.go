@@ -1,4 +1,4 @@
-//go:build esp32_2432s028r || esp32_3248s035c
+//go:build esp32_2432s028r || esp32_3248s035c || esp32s3
 
 package platform
 
@@ -18,7 +18,9 @@ func initJoystick(bus *machine.I2C, sda, scl machine.Pin) hal.Pad {
 		println("joystick: I2C:", err.Error())
 		return nil
 	}
-	if !bus.CheckDevice(minijoy.Address) {
+	// A read, not CheckDevice: the ESP32-S3's machine.I2C does not have it.
+	var one [1]byte
+	if bus.Tx(minijoy.Address, nil, one[:]) != nil {
 		println("joystick: none (I2C SDA", sda, "SCL", scl, ")")
 		return nil
 	}

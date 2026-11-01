@@ -3,12 +3,12 @@
 // Package flashmap maps a region of the SPI flash into the data bus so it
 // can be read like memory, although it is not part of the program image.
 //
-// Why: TinyGo boots the ESP32-S3 without a second stage bootloader, so the
-// ROM loader walks every segment of the program image. It refuses a large
-// DROM (rodata) segment ("Invalid image block, can't boot" with a ~1MB
-// go:embed), so big data such as images is written to its own flash region
-// and mapped at run time instead, like ESP-IDF's esp_mmu_map / partition
-// mmap.
+// Why: TinyGo boots the ESP32-S3 without a second stage bootloader, and the
+// ROM loader once refused a large DROM (rodata) segment ("Invalid image
+// block, can't boot" with a ~1MB go:embed). So the slides are written to
+// their own flash region and mapped at run time, like ESP-IDF's esp_mmu_map
+// / partition mmap. TinyGo 0.44 images no longer have that segment in the
+// ROM loader's list: cmd/picopad runs with 4.8MB of rodata.
 //
 // The ROM cache functions used here must be defined for the linker, see
 // the ldflags of targets/esp32-4827s043.json:

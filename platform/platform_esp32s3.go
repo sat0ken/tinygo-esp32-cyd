@@ -43,8 +43,12 @@ func InitLCD() (*rgblcd.Device, error) {
 	return d, nil
 }
 
-// InitPad returns nil: the ESP32-4827S043 has no game controller yet.
-func InitPad() hal.Pad { return nil }
+// InitPad returns the mini joystick module on IO17 and IO18 as a game
+// controller, or nil if it is not there. Call it after InitTouch, which
+// frees IO18 (the XPT2046's PENIRQ is on the same line).
+func InitPad() hal.Pad {
+	return initJoystick(machine.I2C0, machine.Pin(board.PinJoySDA), machine.Pin(board.PinJoySCL))
+}
 
 // SetBacklight sets the backlight (GPIO2) brightness in percent with PWM.
 func SetBacklight(percent int) {
@@ -71,11 +75,11 @@ func SetBacklight(percent int) {
 }
 
 // InitTouch initialises the XPT2046 with the calibration from package board.
+// It does not use the IRQ pin, IO18: the joystick module's SCL is there.
 func InitTouch() *xpttouch.Touch {
-	return xpttouch.New(
+	return xpttouch.NewPolled(
 		machine.Pin(board.PinTouchSCK), machine.Pin(board.PinTouchCS),
 		machine.Pin(board.PinTouchMOSI), machine.Pin(board.PinTouchMISO),
-		machine.Pin(board.PinTouchINT),
 		TouchCalibration())
 }
 

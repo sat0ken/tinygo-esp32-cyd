@@ -1,4 +1,4 @@
-//go:build esp32_2432s028r || esp32_3248s035c
+//go:build esp32_2432s028r || esp32_3248s035c || esp32_4827s043
 
 // joystick_check checks the mini joystick module (package minijoy) on an
 // ESP32 CYD board. Power the module with 3.3V, not 5V: its I2C lines are
@@ -25,6 +25,10 @@
 //	make flash-s028 PKG=./examples/joystick_check                # ESP32-2432S028R
 //	make flash-s028 PKG=./examples/joystick_check TAGS=e32r28t   # E32R28T
 //	make flash-s035 PKG=./examples/joystick_check                # ESP32-3248S035C
+//	make flash-noerase PKG=./examples/joystick_check             # ESP32-4827S043
+//
+// The touch panel keeps working next to the module: the log prints where it
+// is pressed and released, and the read errors while it is pressed.
 package main
 
 import (
@@ -33,11 +37,11 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/sat0ken/tinygo-cyd/hal"
 	"github.com/sat0ken/tinygo-cyd/minijoy"
 	"github.com/sat0ken/tinygo-cyd/platform"
 	"github.com/sat0ken/tinygo-cyd/romfont/freesans"
 	"github.com/sat0ken/tinygo-cyd/romfont/proggy"
-	"github.com/sat0ken/tinygo-cyd/spilcd"
 	"tinygo.org/x/tinyfont"
 )
 
@@ -55,9 +59,9 @@ var (
 func main() {
 	time.Sleep(time.Second)
 	println("\n=== joystick_check ===")
-	d, err := platform.InitScreen()
+	d, t, err := platform.InitFull()
 	if err != nil {
-		println("InitScreen:", err.Error())
+		println("InitFull:", err.Error())
 		platform.Halt()
 	}
 	println("I2C SDA", sdaPin, "SCL", sclPin, "100kHz,", wiring)
@@ -86,7 +90,16 @@ func main() {
 	var lastLog time.Time
 	t0 := time.Now()
 	errors := 0
+	touched := false
 	for {
+		if x, y, p := t.ReadTouch(); p != touched {
+			touched = p
+			if p {
+				println(time.Since(t0).Milliseconds(), "touch at", x, y, "(", errors, "read errors so far )")
+			} else {
+				println(time.Since(t0).Milliseconds(), "touch released (", errors, "read errors so far )")
+			}
+		}
 		if err := j.Read(&st); err != nil {
 			errors++
 			if errors%30 == 1 {
@@ -149,8 +162,9 @@ func mode(block bool) string {
 func found(j *minijoy.Device) bool {
 	println("scanning I2C 0x08..0x77")
 	ok := false
+	var one [1]byte
 	for a := uint16(0x08); a < 0x78; a++ {
-		if bus.CheckDevice(a) {
+		if bus.Tx(a, nil, one[:]) == nil {
 			println("  found", "0x"+strconv.FormatUint(uint64(a), 16))
 			if a == j.Address {
 				ok = true
@@ -253,15 +267,15 @@ func text(s minijoy.State) string {
 // ---- screen ----
 
 // screen draws the stick in a square on the left and the buttons on the
-// right; it adapts to 320x240 and 480x320.
+// right; it adapts to 320x240, 480x272 and 480x320.
 type screen struct {
-	d          *spilcd.Device
+	d          hal.Display
 	w, h       int16
 	bx, by, bs int16 // stick box
 	tx         int16 // left of the text column
 }
 
-func newScreen(d *spilcd.Device) *screen {
+func newScreen(d hal.Display) *screen {
 	w, h := d.Size()
 	bs := h - 70
 	if bs > 200 {

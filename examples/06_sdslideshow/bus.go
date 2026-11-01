@@ -20,7 +20,7 @@ const sdFrequency = 10_000_000
 //
 //   - SD card: the hardware SPI (machine.SPI0 = SPI2/FSPI) drives the pins
 //     through the GPIO matrix.
-//   - touch: the tinygo xpt2046 driver bit-bangs the same pins as GPIO.
+//   - touch: package xpttouch bit-bangs the same pins as GPIO.
 //
 // Before each use the pins are switched to the right function and the
 // other device's chip select is held high. Switching happens at most once
@@ -71,7 +71,7 @@ func (b *sharedBus) useSD() {
 }
 
 // useTouch gives the pins back to GPIO for the bit-banged touch driver
-// (same directions as xpt2046.Device.Configure: clock/data out low, data in).
+// (same directions as xpttouch.NewPolled: clock/data out low, data in).
 func (b *sharedBus) useTouch() {
 	if b.mode == modeTouch {
 		return

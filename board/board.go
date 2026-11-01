@@ -75,14 +75,23 @@ const (
 // XPT2046 resistive touch controller (R version of the board).
 // It shares its SPI bus with the microSD slot.
 //
-// GPIO18 (INT) is also routed to the P3/P4 connectors: do not use it for
-// anything else on those connectors while touch is in use.
+// GPIO18 (INT) is also routed to the connectors, where it is the joystick
+// module's SCL: platform.InitTouch turns the XPT2046's PENIRQ output off and
+// does not use the pin.
 const (
 	PinTouchSCK  = 12
 	PinTouchMISO = 13
 	PinTouchMOSI = 11
 	PinTouchCS   = 38
 	PinTouchINT  = 18
+)
+
+// Mini joystick module (package minijoy) as a game controller: I2C on IO17
+// (SDA) and IO18 (SCL), 3.3V. Checked on the board with a bit-banged scan;
+// the other way round finds nothing.
+const (
+	PinJoySDA = 17
+	PinJoySCL = 18
 )
 
 // microSD slot (SPI mode). It shares SCK/MOSI/MISO with the XPT2046 touch

@@ -81,6 +81,7 @@ examples:
 	@echo "== cmd/games"; tinygo build -target=$(TARGET) -size short -o /dev/null ./cmd/games
 	@echo "== cmd/picopad"; tinygo build -target=$(TARGET) -size short -o /dev/null ./cmd/picopad
 	@echo "== cmd/ccmeter"; tinygo build -target=$(TARGET) -size short -o /dev/null ./cmd/ccmeter
+	@echo "== joystick_check"; tinygo build -target=$(TARGET) -size short -o /dev/null ./examples/joystick_check
 
 ## ESP32-3248S035C ---------------------------------------------------------
 

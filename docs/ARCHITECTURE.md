@@ -65,7 +65,7 @@ ESP32-4827S043（ESP32-S3 + 4.3インチ 480×272 RGB 液晶）を TinyGo で動
 | [wasmlcd/](../wasmlcd/wasmlcd.go) | ブラウザの canvas に表示・マウス/タッチを入力にする | ブラウザ |
 | [memlcd/](../memlcd/memlcd.go) | メモリ上の表示（テスト用、PNG 出力） | ホスト |
 | [platform/](../platform/) | ビルド先に応じて上の3つを選んで初期化 | 全部 |
-| [xpttouch/](../xpttouch/) | XPT2046 タッチの読み取り | 実機 |
+| [xpttouch/](../xpttouch/) | XPT2046 タッチの読み取り（S043 は IRQ を使わない `NewPolled`） | 実機 |
 | [touchcal/](../touchcal/calib.go) | タッチの raw 値 → 画面座標、4隅からのキャリブレーション | 全部 |
 | [romfont/](../romfont/romfont.go) | フォントを文字列にしてフラッシュに置く（tinyfont と同じ描画）。`go generate ./romfont` で [tools/fontgen](../tools/fontgen/main.go) が作る | 全部 |
 | [spilcd/](../spilcd/spilcd.go) | SPI 液晶（ST7796・ILI9341）のドライバ。フレームバッファなし。DMA で裏で送れる（`DrawRGBBitmap8Async`） | 実機（ホストでもテスト） |
@@ -422,9 +422,16 @@ flowchart LR
 
 ## 9. タッチパネル
 
-- XPT2046（抵抗膜）。tinygo drivers の [xpt2046](https://github.com/tinygo-org/drivers/tree/release/xpt2046) を使う。このドライバは **SPI を GPIO で1ビットずつ操作（ビットバング）** しており、読み取りに時間がかかる。
-- ピン：SCK=12、MOSI=11、MISO=13、CS=38、INT=18（押されると Low）。SCK/MOSI/MISO は microSD と共有。
-- [xpttouch.ReadRaw](../xpttouch/xpttouch.go#L30)：ドライバが返す 16bit 値を 12bit に戻す。[Calibration.Map](../touchcal/calib.go#L18)：raw 値を画面座標に線形変換し、画面内に収める。
+- XPT2046（抵抗膜）。**SPI を GPIO で1ビットずつ操作（ビットバング）** する。ESP32-2432S028R は tinygo drivers の [xpt2046](https://github.com/tinygo-org/drivers/tree/release/xpt2046) を使い、ESP32-4827S043 は同じ読み方を [xpttouch.NewPolled](../xpttouch/xpttouch.go) でする（下記）。
+- ピン：SCK=12、MOSI=11、MISO=13、CS=38、INT=18（PENIRQ、押されると Low）。SCK/MOSI/MISO は microSD と共有。
+- **IO18 はジョイスティックの SCL でもある**：S043 で空いているピンは IO17〜20 で、ジョイスティックは IO17（SDA）・IO18（SCL）につなぐ。xpt2046 ドライバは PENIRQ で押されたかを見るので、そのままではタッチで SCL が Low になる。`NewPolled` は IRQ のピンを使わない：
+  - 押されたかは圧力で見る：Z1 + 4095 − Z2 が 200 以上（実測：触っていないとき最大 18、軽く押した隅で 371、中央を強く押して約 1800）。
+  - 測るコマンドは xpt2046 ドライバと同じ PD=00。PD=01 のまま測ると、触っていないのに Z2 が 4090 でなく 7 になり、x・y も動かない（実機）。
+  - 読み取りの最後に PD=01 のコマンドを 1 回送ると、次の読み取りまで PENIRQ が止まる（実機：押したまま IO18 は High）。PD=00 の間は押されていれば SCL が Low になるが、CPU はタッチを読んでいるので I2C と重ならない。画面を押したままスティックを動かして、読み取りエラーは 0 回。
+  - 時間：クロックは半周期約 1us（`halfClock`、測定で 957ns）。1 回の変換は 24 クロックで約 48us。押していないとき 3 回で約 0.15ms（計算）。押しているとき 27 回で約 1.3ms（計算）。
+  - 値は xpt2046 ドライバと同じ（X、4096 − Y）で、[board.go](../board/board.go) の値のままタッチの位置が合う（cmd/games の小さいマスで確かめた）。
+  - 起動後最初の `InitTouch` で PENIRQ が止まるので、`InitPad` はその後に呼ぶ。06_sdslideshow（SD と共有）は実機では試していない。
+- [xpttouch.ReadRaw](../xpttouch/xpttouch.go#L30)：10 回の平均を 12bit で返す。[Calibration.Map](../touchcal/calib.go#L18)：raw 値を画面座標に線形変換し、画面内に収める。
 - キャリブレーション値は [board.go](../board/board.go) の `TouchRaw*`（実測：X 172〜3940、Y 3884〜329、軸の入れ替えなし）。測り直しは [04_touch](../examples/04_touch/main.go)。
 - [FromCorners](../touchcal/calib.go)：4隅のタップから値を求める。軸の入れ替わりを検出し、範囲が狭すぎる・同じ辺の2点が食い違う・向きが逆、のときは失敗にする。
 
@@ -434,8 +441,10 @@ flowchart LR
 
 ### 10.1 なぜ画像をプログラムに埋め込まないのか
 
-TinyGo の ESP32-S3 は **ESP-IDF の2段目ブートローダを使わず、ROM が直接プログラムを読み込む**。ROM は約 1MB の rodata セグメントを「Invalid image block, can't boot」と拒否した。
+TinyGo の ESP32-S3 は **ESP-IDF の2段目ブートローダを使わず、ROM が直接プログラムを読み込む**。作った当時は、ROM が約 1MB の rodata セグメントを「Invalid image block, can't boot」と拒否した。
 そこで、画像は**プログラムとは別にフラッシュの 8MB 位置に書き**、実行時に MMU でメモリとして見えるようにして読む。
+
+TinyGo 0.44 のイメージでは、ROM が読むのは RAM に置く 2 つのセグメント（.data と .iram）だけで、rodata は TinyGo の起動コードがフラッシュから XIP で読む。4.8MB の rodata がある cmd/picopad がこの基板で動いた（17章）ので、今はこの制限に当たらない。スライドは今も別の領域に置いている。
 
 ### 10.2 フラッシュの配置（16MB）
 
@@ -655,7 +664,7 @@ flowchart TB
 
 ### ゲームコントローラー（[pad](../pad/pad.go)）
 
-- `hal.Pad` は `ReadPad() hal.Buttons`（上下左右・A・B・X・Y・OK のビット）。`platform.InitPad()` がモジュールを1度だけ探して返す（ないとき・S043・ホストは `nil`、ブラウザはキーボード）。ランチャーは自分の `Pad` を始めたゲームに渡す。
+- `hal.Pad` は `ReadPad() hal.Buttons`（上下左右・A・B・X・Y・OK のビット）。`platform.InitPad()` がモジュールを1度だけ探して返す（ないとき・ホストは `nil`、ブラウザはキーボード）。ランチャーは自分の `Pad` を始めたゲームに渡す。
 - 各ゲームは毎フレーム `pad.Input.Update` で読み、`Pressed`（押した瞬間。スティックは 0.35 秒後から 0.1 秒ごとに繰り返す）と `Held`（押している間）を使う。最初の `Update` は押されているものを覚えるだけなので、ランチャーで押した A がゲームの最初の画面で押されたことにならない（タッチの `waitRelease` と同じ役目）。
 - 操作は「フォーカス（枠）を動かして A で押す」に揃えた。ゲームは押せるものの四角を並べ、`pad.Move` が押した向きにあるうち一番近いものを選ぶ（横の移動なら縦に重なるものを優先、なければ一番近いもの）。数独の盤から右へ倒すと数字のボタンに、ソリティアの山札から下へ倒すと列のカードに移るのは、この規則だけでできている。
 - タップと同じことをするよう、ポーカーはタップも `press(k)` を通すように直した。ソリティアは押せるもの（`target`）を状態から毎回作り、動いたカードからフォーカスが外れたら列の一番下のカードに戻す（`fixFocus`）。
@@ -714,7 +723,7 @@ flowchart TB
 - **起動時の `SHA-256 comparison failed`**：ROM が計算したハッシュとイメージのハッシュが違う。起動は続くので実害はないが、原因は未調査。
 - **MMU エントリを2か所に書いている**：ESP-IDF（共有の表、エントリ = 仮想アドレス >> 16）と TinyGo の起動コード（DROM はエントリ 256〜）の解釈の違い。どちらで動いているかは未確認。
 - **06 は実機で未確認**：SD カードの動作確認がまだ。SPI 10MHz で画素化けする場合は `sdFrequency` を 4MHz に。
-- **タッチの読み取りが遅い**：xpt2046 ドライバがビットバングで、各クロックで `time.Sleep` を呼ぶ。ゲームの fps が下がるならサンプル数を減らす。
+- **タッチの読み取りが遅い**：S028 は xpt2046 ドライバがビットバングで、各クロックで `time.Sleep` を呼ぶ。ゲームの fps が下がるならサンプル数を減らす。S043 の `NewPolled` は押しているときで約 1.3ms。
 - **PSRAM と Wi-Fi は未使用**：使う場合はメモリ計画（[5章](#5-メモリの使い方)）を見直す。
 - **フェーズ8（VSYNC 割り込み）・フェーズ10（メモリ節約モード）は未実装**。
 
@@ -1017,7 +1026,7 @@ PICTOR（32）は映画のキャラクターの絵 5 つとタイトルの販売
 - レイプターは C では最後のシールドのあと機体が燃えたまま続く（ゲームオーバーの画面がない）。`OneGame` では燃えてから 3 秒（30 フレーム）で戻る。
 - 選ぶ画面とゲームは順番に `picopad.New` で作る。ゲームのフレームバッファ（75KB）と送信用のバッファ（10KB）を毎回作ると、前のものを GC が回収するまでヒープに 2 つ並ぶことがあるので、`Close` で次の `New` に回す（`spare`。パッケージの変数なので実行時の初期化はない）。
 - 選ぶ画面はタッチを 3×3 のボタンにしないで（`New` に touch を渡さない）、自分で読んで名前をタップで選ぶ。ゲームから戻ったときにまだ触れているタッチは、一度離すまで数えない。
-- **フラッシュ**：19 本の画像と面のデータは約 4.4MB（倉庫番の面と解答 1.2MB、PICTOR 1.3MB、絵の 15 パズル 1.1MB、カーレース 0.4MB …）。ESP32（S028・S035）はフラッシュが 4MB で、DROM（rodata）も 4MB までなので、全部ではリンクで「section '.rodata' will not fit in region 'DROM'」になる。絵の 15 パズルをビルドタグ（`esp32_2432s028r`・`esp32_3248s035c`）で外すと、イメージは約 3.7MB。ESP32-4827S043（ESP32-S3、16MB）では 19 本で約 4.7MB になる。ただし 10.1 のとおり、ESP32-S3 の ROM が大きい rodata のセグメントを拒んだことがある。倉庫番や PICTOR を単独で動かす場合も同じで、実機では確かめていない。
+- **フラッシュ**：19 本の画像と面のデータは約 4.4MB（倉庫番の面と解答 1.2MB、PICTOR 1.3MB、絵の 15 パズル 1.1MB、カーレース 0.4MB …）。ESP32（S028・S035）はフラッシュが 4MB で、DROM（rodata）も 4MB までなので、全部ではリンクで「section '.rodata' will not fit in region 'DROM'」になる。絵の 15 パズルをビルドタグ（`esp32_2432s028r`・`esp32_3248s035c`）で外すと、イメージは約 3.7MB。ESP32-4827S043（ESP32-S3、16MB）では 19 本で約 4.7MB になる。ESP32-S3 の ROM が大きい rodata のセグメントを拒むという 10.1 の制限には、TinyGo 0.44 では当たらない（19 本入りの cmd/picopad を実機で動かし、テトリス・ライフゲーム・絵の 15 パズルなどを遊んで確かめた）。
 
 ### テスト
 

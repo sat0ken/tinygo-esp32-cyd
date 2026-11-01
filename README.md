@@ -135,8 +135,9 @@ make monitor
 
 - 1枚 255KB。フラッシュ領域は 8MB なので最大 32 枚（(8MB − ヘッダ 4KB) ÷ 261,120 バイト。パック形式の上限は 127 枚）。
 - 画像をプログラムに埋め込まない理由：TinyGo は2段目ブートローダを使わず ROM が直接プログラムを読み込むが、
-  ROM は約 1MB の rodata セグメントを拒否する（`Invalid image block, can't boot`）。
+  作った当時は ROM が約 1MB の rodata セグメントを拒否した（`Invalid image block, can't boot`）。
   そこで別領域に書いたデータを実行時に MMU でマッピングして読む（`flashmap` パッケージ、ESP-IDF の `esp_mmu_map` 相当）。
+  TinyGo 0.44 ではこの制限に当たらない（4.8MB の rodata がある cmd/picopad が動く）。
 - ブラウザ版とホストのテストでは同じ `slides.pack` を `go:embed` で埋め込む。
 - `images/` の同梱画像はプログラムで生成したサンプル。
 
@@ -230,10 +231,11 @@ make examples-s028                          # この基板で動く全プログ�
 | ESP32-2432S028R | CN1：GND、3.3V、IO27=SDA、IO22=SCL | `make flash-s028 PKG=./examples/joystick_check` |
 | E32R28T | SPI 端子 IO27=SDA・IO18=SCL、拡張端子 3.3V・GND | `make flash-s028 PKG=./examples/joystick_check TAGS=e32r28t` |
 | ESP32-3248S035C | CN1（上から GND、IO22、IO21、3.3V）：IO21=SDA、IO22=SCL（モジュールの並び G・V・SDA・SCL とは違うので線を入れ替える） | `make flash-s035 PKG=./examples/joystick_check` |
+| ESP32-4827S043 | IO17=SDA、IO18=SCL、3.3V、GND（逆向きでは見つからない） | `make flash-noerase PKG=./examples/joystick_check` |
 
 - 起動時のログ：I2C のスキャン結果、全レジスタの値、1回の読み取り時間。そのあと画面にスティックの位置とボタンの状態（押している間は緑）を出し、変化を時刻（ms）付きでログに出す。まとめ読み・リピートスタートでの読み出しは、スティックを斜め以外に倒すかボタンを押したときに比べる（中央で何も押していないと全レジスタが同じ値で、比べても分からないため）。
 
-ESP32-3248S035C の CN1 でも、スキャン・レジスタの読み取り・スティックとボタンの操作、cmd/games でタッチと一緒に使えることを確かめた（逆向き IO22=SDA では見つからない）。ESP32-2432S028R（CN1、100kHz）で確かめたこと：
+ESP32-3248S035C の CN1 でも、スキャン・レジスタの読み取り・スティックとボタンの操作、cmd/games でタッチと一緒に使えることを確かめた（逆向き IO22=SDA では見つからない）。ESP32-4827S043 でも同じことを、cmd/games と cmd/picopad で確かめた。この基板の IO18 はタッチの INT と同じ線なので、タッチの読み方を変えてある（[ARCHITECTURE 9章](docs/ARCHITECTURE.md#9-タッチパネル)）。画面を押したままスティックを動かしても、読み取りエラーは出なかった。ESP32-2432S028R（CN1、100kHz）で確かめたこと：
 
 | 項目 | 結果 |
 |---|---|

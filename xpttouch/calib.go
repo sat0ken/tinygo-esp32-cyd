@@ -22,3 +22,14 @@ const (
 func FromCorners(raw [4][2]int32, width, height, inset int16) (Calibration, error) {
 	return touchcal.FromCorners(raw, width, height, inset, minSpanX, minSpanY)
 }
+
+// pressThreshold is the lowest pressure value of a press (see pressed). On
+// the ESP32-4827S043 it is at most 18 when not pressed, 371 for the lightest
+// press measured (in a corner) and about 1800 for a firm one in the middle.
+const pressThreshold = 200
+
+// pressed tells from the two pressure readings whether the panel is
+// pressed: Z1 rises from 0 and Z2 falls from 4095 as it is pressed harder.
+func pressed(z1, z2 int32) bool {
+	return z1+4095-z2 >= pressThreshold
+}
