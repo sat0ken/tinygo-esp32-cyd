@@ -70,8 +70,8 @@ make flash-noerase PKG=./cmd/games        # 実機
 make wasm PKG=./cmd/games && make serve   # ブラウザ
 ```
 
-起動するとゲームを選ぶ画面が出る（INVADERS / SUDOKU / OTHELLO / SOLITAIRE / POKER / KART / SPACE）。各ゲームの最初の画面にある「< GAMES」で選ぶ画面に戻る。
-ゲーム本体は `games/invaders`・`games/sudoku`・`games/othello`・`games/solitaire`・`games/poker`・`games/kart`・`games/starguard` パッケージにあり（トランプの部品は `games/cards`）、examples の 08〜14 は1つずつ動かすだけの `main.go`。
+起動するとゲームを選ぶ画面が出る（INVADERS / SUDOKU / OTHELLO / SOLITAIRE / POKER / KART / SPACE / MAHJONG）。各ゲームの最初の画面にある「< GAMES」で選ぶ画面に戻る。
+ゲーム本体は `games/invaders`・`games/sudoku`・`games/othello`・`games/solitaire`・`games/poker`・`games/kart`・`games/starguard`・`games/mahjong` パッケージにあり（トランプの部品は `games/cards`）、examples の 08〜14 と 34 は1つずつ動かすだけの `main.go`。
 
 ### examples
 
@@ -110,6 +110,7 @@ make wasm PKG=./cmd/games && make serve   # ブラウザ
 | 31_fifteen2 | 同じく PicoLibSDK の絵の 15 パズル（[games/fifteen2](games/fifteen2/fifteen2.go)）。17_fifteen と同じパズルを、数字と 13 枚の絵（子猫・子犬・ペガサス・不死鳥など）から選んで遊ぶ。UP/DOWN で絵、A で始める。ゲーム中は矢印で動かす、A で番号を出す、X でソルバー、Y で絵の選択へ。絵の出どころは元のソースに書かれていない。wasm でも動く | ソルバーで完成すると絵が全部そろう |
 | 32_pictor | 同じく PicoLibSDK の横スクロールのシューティング Pictor（[games/pictor](games/pictor/pictor.go)）。バラが 12 の場面を走りながら PicoPad の部品を集める。場面ごとに仲間が増え、B/X でその姿に変わる（武器が変わる）。矢印で動く（歩く仲間は UP でジャンプ）、A で撃つ、Y でメニュー。元の映画のキャラクターの絵 5 つはこちらで描いたドット絵に差し替えた。点の記録は RAM だけ。wasm でも動く | 草原の場面で撃っている |
 | 33_zoom | 同じく PicoLibSDK の ZOOM を Gate Runner という名前にしたもの（[games/zoom](games/zoom/zoom.go)）。惑星の上を低く飛び、柱 2 本のゲートをくぐり、円盤を撃つ。セクターごとに 4 つの区域（最後は宇宙で母艦が出る）。LEFT/RIGHT で動く、UP/DOWN で速さ、A で撃つ、Y で終わり。元は 1984 年のアーケードゲームの DOS 版をもとにしたもので、その題字と絵を全部こちらで描いたドット絵に替えた。wasm でも動く | ゲートをくぐって飛んでいる |
+| 34_mahjong | リーチ麻雀（[games/mahjong](games/mahjong/game.go)、オリジナル）。自分と CPU 3 人の 4 人で打つ。画面の文字は日本語（美咲フォントと東雲フォント）。最初の画面で東風戦か半荘戦を選ぶ。牌をタップで持ち上げ、もう一度タップで捨てる。ツモ・リーチ・カン・ロン・ポン・チー・パスは使えるときだけボタンが出る。リーチの牌は横向きになり、卓の中央に千点棒が置かれる。ジョイスティックでは牌とボタンの間を動き、A で捨てる／押す、B でパス。終了は 2 回押すとメニューへ。赤ドラ・流し満貫・責任払い・暗槓への国士の槍槓はない。wasm でも動く | 牌の絵が読める、リーチ・鳴き・和了と点数の画面、CPU の待ち時間（ログの `slowest CPU turn`） |
 
 02_colorbars はシリアルから1文字コマンドを受け付ける：
 `c` カラーバー、`r`/`g`/`b`/`w`/`k` 単色（赤/緑/青/白/黒）、`d` レジスタを再ダンプ。

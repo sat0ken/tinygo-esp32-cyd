@@ -7,6 +7,7 @@ import (
 	"github.com/sat0ken/tinygo-cyd/games/cards"
 	"github.com/sat0ken/tinygo-cyd/games/invaders"
 	"github.com/sat0ken/tinygo-cyd/games/kart"
+	"github.com/sat0ken/tinygo-cyd/games/mahjong"
 	"github.com/sat0ken/tinygo-cyd/games/othello"
 	"github.com/sat0ken/tinygo-cyd/games/poker"
 	"github.com/sat0ken/tinygo-cyd/games/solitaire"
@@ -86,6 +87,12 @@ var entries = []entry{
 	}},
 	{"SPACE", "star guard", drawSpaceIcon, func(l *Launcher) game {
 		g := starguard.NewGame(l.d, l.t, l.Seed())
+		g.OnExit, g.Pad = l.exit, l.Pad
+		g.DrawMenu()
+		return g
+	}},
+	{"MAHJONG", "you and 3 CPU", drawMahjongIcon, func(l *Launcher) game {
+		g := mahjong.NewGame(l.d, l.t, l.Seed())
 		g.OnExit, g.Pad = l.exit, l.Pad
 		g.DrawMenu()
 		return g
@@ -184,6 +191,8 @@ func (l *Launcher) Playing() string {
 		return "KART"
 	case *starguard.Game:
 		return "SPACE"
+	case *mahjong.Game:
+		return "MAHJONG"
 	}
 	return "?"
 }
@@ -426,6 +435,10 @@ func drawSpaceIcon(l *Launcher, r rect) {
 	l.d.FillRectangle(cx+u+1, cy, 2*u, 1, green)
 	l.d.FillRectangle(cx, cy-3*u, 1, 2*u, green)
 	l.d.FillRectangle(cx, cy+u+1, 1, 2*u, green)
+}
+
+func drawMahjongIcon(l *Launcher, r rect) {
+	mahjong.DrawIcon(l.d, r.x, r.y, r.w, r.h)
 }
 
 // vsyncWaiter is implemented by rgblcd.Device.

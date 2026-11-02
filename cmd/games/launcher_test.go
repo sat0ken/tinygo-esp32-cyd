@@ -62,10 +62,11 @@ func TestStartEachGameAndComeBack(t *testing.T) {
 		"POKER":     {33, 253},
 		"KART":      {50, 22},
 		"SPACE":     {50, 22},
+		"MAHJONG":   {50, 22},
 	}
 	// Tap each tile, where possible where the game's first screen has a
 	// button (invaders: anywhere starts the game; othello: WHITE; poker:
-	// BET ONE; kart: NORMAL; space: HARD), so a tap leaking into the game
+	// BET ONE; kart: NORMAL; space: HARD; mahjong: EAST + SOUTH), so a tap leaking into the game
 	// would be noticed.
 	taps := map[string][2]int16{
 		"INVADERS":  {60, 80},
@@ -75,6 +76,7 @@ func TestStartEachGameAndComeBack(t *testing.T) {
 		"POKER":     {90, 238},
 		"KART":      {200, 190},
 		"SPACE":     {320, 150},
+		"MAHJONG":   {420, 190},
 	}
 	testStartEachGameAndComeBack(t, board.Width, board.Height, backs, taps)
 }
@@ -88,6 +90,7 @@ func TestStartEachGameAndComeBackSmall(t *testing.T) {
 		"POKER":     {27, 217},
 		"KART":      {50, 22},
 		"SPACE":     {50, 22},
+		"MAHJONG":   {50, 22},
 	}
 	taps := map[string][2]int16{
 		"INVADERS":  {60, 60},
@@ -97,6 +100,7 @@ func TestStartEachGameAndComeBackSmall(t *testing.T) {
 		"POKER":     {160, 120},
 		"KART":      {260, 157}, // HARD
 		"SPACE":     {50, 190},
+		"MAHJONG":   {180, 190}, // EAST + SOUTH
 	}
 	testStartEachGameAndComeBack(t, 320, 240, backs, taps)
 }
