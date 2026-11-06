@@ -47,18 +47,18 @@ func newTest(t *testing.T, w, h int16) (*Launcher, *memlcd.Display, *picotest.Cl
 // TestMenu: the menu, the arrows and A.
 func TestMenu(t *testing.T) {
 	l, d, clock, p, _ := newTest(t, 320, 240)
-	if len(l.games) != 20 {
+	if len(l.games) != 21 {
 		t.Fatalf("%d games", len(l.games))
 	}
 	clock.At(100*ms, func() { goldentest.Check(t, "picopad_menu", d.Image()) })
 	p.Tap(hal.PadUp, 200*ms) // from Tetris round to the last
 	clock.At(400*ms, func() {
-		if l.sel != 19 {
+		if l.sel != 20 {
 			t.Errorf("UP: %d", l.sel)
 		}
 	})
-	p.Tap(hal.PadLeft, 500*ms) // 9, the last of the first column
-	p.Tap(hal.PadDown, 700*ms) // 10, the first of the second
+	p.Tap(hal.PadLeft, 500*ms) // 20 - 11
+	p.Tap(hal.PadDown, 700*ms) // 10, the last of the first column
 	p.Tap(hal.PadUp, 800*ms)
 	clock.At(900*ms, func() {
 		if l.sel != 9 {
@@ -68,7 +68,7 @@ func TestMenu(t *testing.T) {
 	})
 	p.Tap(hal.PadRight, time.Second) // 20, the last
 	p.Tap(hal.PadA, 1200*ms)
-	if i := l.menu(); i != 19 || l.games[i].name != "Baseball" {
+	if i := l.menu(); i != 20 || l.games[i].name != "Futsal" {
 		t.Errorf("A: %d", i)
 	}
 }
@@ -83,7 +83,7 @@ func TestTouch(t *testing.T) {
 		{300 * ms, ox + 200, oy + listY + 2*rowH + 5}, // the third of the second column
 		{600 * ms, ox + 200, oy + listY + 2*rowH + 5},
 	}
-	if i := l.menu(); i != 12 || l.games[i].name != "Vegaslot" {
+	if i := l.menu(); i != 13 || l.games[i].name != "Raptor" {
 		t.Errorf("tap: %d", i)
 	}
 }
@@ -97,7 +97,7 @@ func TestScaled(t *testing.T) {
 	at := func(x, y int) (int16, int16) { return int16(26 + (4*x+2)/3), int16((4*y + 2) / 3) }
 	x, y := at(200, listY+2*rowH+5) // the third of the second column
 	tp.taps = []tap{{300 * ms, x, y}, {600 * ms, x, y}}
-	if i := l.menu(); i != 12 || l.games[i].name != "Vegaslot" {
+	if i := l.menu(); i != 13 || l.games[i].name != "Raptor" {
 		t.Errorf("tap: %d", i)
 	}
 }

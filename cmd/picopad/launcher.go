@@ -7,6 +7,7 @@ import (
 	"github.com/sat0ken/tinygo-cyd/games/chess"
 	"github.com/sat0ken/tinygo-cyd/games/eggs"
 	"github.com/sat0ken/tinygo-cyd/games/fifteen"
+	"github.com/sat0ken/tinygo-cyd/games/futsal"
 	"github.com/sat0ken/tinygo-cyd/games/ghostrac"
 	"github.com/sat0ken/tinygo-cyd/games/life"
 	"github.com/sat0ken/tinygo-cyd/games/maze"
@@ -42,7 +43,8 @@ const (
 	backMatch = "End of a game or Y: back to this menu"
 )
 
-// entries are the games, in the order of the examples (15 to 33, then 35).
+// entries are the games, in the order of the examples (15 to 33, then 35
+// and 36).
 var entries = []entry{
 	{"Tetris", "Falling bricks. UP/X turn, B pause", backOver, func(d hal.Display, t hal.Touch, seed uint32) (*picopad.Console, func()) {
 		g := tetris.New(d, t, seed)
@@ -121,6 +123,10 @@ var entries = []entry{
 		g := baseball.New(d, t, seed)
 		return g.Console, g.Run
 	}},
+	{"Futsal", "Five-a-side football. A pass, B shoot", backMatch, func(d hal.Display, t hal.Touch, seed uint32) (*picopad.Console, func()) {
+		g := futsal.New(d, t, seed)
+		return g.Console, g.Run
+	}},
 }
 
 const fifteen2Name = "Fifteen Pictures"
@@ -128,9 +134,9 @@ const fifteen2Name = "Fifteen Pictures"
 // The menu: two columns of rows names under the title, the about and back
 // lines of the chosen game at the bottom.
 const (
-	rows    = 10
+	rows    = 11
 	listY   = 40
-	rowH    = 16
+	rowH    = 15
 	colX    = 4
 	colW    = 156
 	aboutY  = 206
@@ -246,9 +252,9 @@ func (l *Launcher) draw(c *picopad.Console) {
 	c.SelFont8x16()
 	c.DrawText2("PICOPAD GAMES", (picopad.Width-13*16)/2, 0, picopad.ColYellow)
 	c.SelFont8x8()
-	const sub = "ported from PicoLibSDK, and Baseball"
+	const sub = "PicoLibSDK ports + Baseball, Futsal"
 	c.DrawText(sub, (picopad.Width-len(sub)*8)/2, 30, picopad.ColGray)
-	c.SelFont8x16()
+	c.SelFont8x14()
 	for i, e := range l.games {
 		x, y := colX+i/rows*colW, listY+i%rows*rowH
 		fg, bg := picopad.ColWhite, picopad.ColBlack
