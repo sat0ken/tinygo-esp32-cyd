@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/sat0ken/tinygo-cyd/games/ants"
 	"github.com/sat0ken/tinygo-cyd/games/atoms"
+	"github.com/sat0ken/tinygo-cyd/games/baseball"
 	"github.com/sat0ken/tinygo-cyd/games/chess"
 	"github.com/sat0ken/tinygo-cyd/games/eggs"
 	"github.com/sat0ken/tinygo-cyd/games/fifteen"
@@ -41,7 +42,7 @@ const (
 	backMatch = "End of a game or Y: back to this menu"
 )
 
-// entries are the games, in the order of the examples (15 to 33).
+// entries are the games, in the order of the examples (15 to 33, then 35).
 var entries = []entry{
 	{"Tetris", "Falling bricks. UP/X turn, B pause", backOver, func(d hal.Display, t hal.Touch, seed uint32) (*picopad.Console, func()) {
 		g := tetris.New(d, t, seed)
@@ -114,6 +115,10 @@ var entries = []entry{
 	}},
 	{"Gate Runner", "Fly through the gates (ZOOM)", backOver, func(d hal.Display, t hal.Touch, seed uint32) (*picopad.Console, func()) {
 		g := zoom.New(d, t, seed)
+		return g.Console, g.Run
+	}},
+	{"Baseball", "Pitch and bat: against the CPU or watch", backMatch, func(d hal.Display, t hal.Touch, seed uint32) (*picopad.Console, func()) {
+		g := baseball.New(d, t, seed)
 		return g.Console, g.Run
 	}},
 }
@@ -241,7 +246,8 @@ func (l *Launcher) draw(c *picopad.Console) {
 	c.SelFont8x16()
 	c.DrawText2("PICOPAD GAMES", (picopad.Width-13*16)/2, 0, picopad.ColYellow)
 	c.SelFont8x8()
-	c.DrawText("ported from PicoLibSDK", (picopad.Width-22*8)/2, 30, picopad.ColGray)
+	const sub = "ported from PicoLibSDK, and Baseball"
+	c.DrawText(sub, (picopad.Width-len(sub)*8)/2, 30, picopad.ColGray)
 	c.SelFont8x16()
 	for i, e := range l.games {
 		x, y := colX+i/rows*colW, listY+i%rows*rowH

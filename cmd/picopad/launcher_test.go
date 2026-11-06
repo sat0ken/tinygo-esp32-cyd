@@ -47,27 +47,28 @@ func newTest(t *testing.T, w, h int16) (*Launcher, *memlcd.Display, *picotest.Cl
 // TestMenu: the menu, the arrows and A.
 func TestMenu(t *testing.T) {
 	l, d, clock, p, _ := newTest(t, 320, 240)
-	if len(l.games) != 19 {
+	if len(l.games) != 20 {
 		t.Fatalf("%d games", len(l.games))
 	}
 	clock.At(100*ms, func() { goldentest.Check(t, "picopad_menu", d.Image()) })
 	p.Tap(hal.PadUp, 200*ms) // from Tetris round to the last
 	clock.At(400*ms, func() {
-		if l.sel != 18 {
+		if l.sel != 19 {
 			t.Errorf("UP: %d", l.sel)
 		}
 	})
-	p.Tap(hal.PadLeft, 500*ms)
-	p.Tap(hal.PadDown, 700*ms)
+	p.Tap(hal.PadLeft, 500*ms) // 9, the last of the first column
+	p.Tap(hal.PadDown, 700*ms) // 10, the first of the second
+	p.Tap(hal.PadUp, 800*ms)
 	clock.At(900*ms, func() {
 		if l.sel != 9 {
-			t.Errorf("LEFT, DOWN: %d", l.sel)
+			t.Errorf("LEFT, DOWN, UP: %d", l.sel)
 		}
 		goldentest.Check(t, "picopad_menu_invaders", d.Image())
 	})
-	p.Tap(hal.PadRight, time.Second) // 19, the last
+	p.Tap(hal.PadRight, time.Second) // 20, the last
 	p.Tap(hal.PadA, 1200*ms)
-	if i := l.menu(); i != 18 || l.games[i].name != "Gate Runner" {
+	if i := l.menu(); i != 19 || l.games[i].name != "Baseball" {
 		t.Errorf("A: %d", i)
 	}
 }
