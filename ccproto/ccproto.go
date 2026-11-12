@@ -29,7 +29,8 @@
 //	   lower-case letter, 0..35 of x
 //
 // A line is at most MaxLine bytes: the board keeps 128 received bytes
-// (TinyGo's UART ring buffer) while it is busy drawing.
+// (TinyGo's UART ring buffer on the ESP32, the UART's receive FIFO on the
+// ESP32-S3) while it is busy drawing.
 package ccproto
 
 import "strconv"
