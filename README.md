@@ -45,6 +45,7 @@ examples/     01_backlight, 02_colorbars, 03_tinydraw, 04_touch
 testdata/golden/  ゴールデン画像
 targets/esp32-4827s043.json  カスタムターゲット（esp32s3-generic 継承、serial=uart）
 targets/esp32-3248s035c.json ESP32-3248S035C のターゲット（esp32-generic 継承）
+targets/esp32-3248s035c-s3.json モジュールを ESP32-S3 に載せ替えた ESP32-3248S035C のターゲット（esp32s3-generic 継承）
 tools/serve   wasm 用の簡易 HTTP サーバ（application/wasm で配信）
 tools/picoimg PicoLibSDK の画像・フォントの C の配列を Go の文字列定数に変換（フラッシュに置かれる）
 tools/ccbridge Claude Code の使用量を集めて基板に送る（PC で動かす）
@@ -194,6 +195,35 @@ make examples-s035                          # この基板で動く全プログ�
 | タッチ | 黄色い点が指の位置に出る | `k`（4隅のタップ）で測り、ログの値を board/s035 の `TouchRaw*` に書く |
 | 速さ | `f`・`t` の時間がログに出る | 参考値（全画面塗りつぶしの時間など） |
 
+### モジュールを ESP32-S3 に載せ替えた基板
+
+ESP32-3248S035C の ESP32 モジュールを外し、同じパッドに ESP32-S3-WROOM-1-N16R8（フラッシュ 16MB、PSRAM 8MB）をはんだ付けした基板でも動く。配線の変更はなく、外した部品は RGB LED の抵抗（R16・R17・R20）だけ。
+
+```sh
+make flash-s035s3 PKG=./examples/s035_check   # まずこれで液晶とタッチを確認
+make flash-s035s3 PKG=./cmd/games             # ゲーム
+make examples-s035s3                          # この基板で動く全プログラムのビルド確認
+```
+
+- 2 つのモジュールは大きさ・ピンの間隔・長辺のパッドの位置が同じで、短辺は S3 が 12 個（元は 10 個）。S3 の短辺の両端（IO3・IO45）は基板のパッドがない所に来るので、下を絶縁する。
+- 基板の配線は、元のパッドに重なった S3 のピンにつながる。GPIO の番号はすべて変わる（[board/s035/pins_s3.go](board/s035/pins_s3.go)。元の番号は [pins_esp32.go](board/s035/pins_esp32.go)）。
+
+| 部品 | 元の ESP32 | ESP32-S3 |
+|---|---|---|
+| 液晶 SCK・MOSI・MISO | IO14・IO13・IO12 | IO19・IO9・IO20 |
+| 液晶 CS・DC・バックライト | IO15・IO2・IO27 | IO47・IO48・IO8 |
+| タッチ SDA・SCL・RST | IO33・IO32・IO25 | IO16・IO15・IO17 |
+| SD CS・SCK・MISO・MOSI | IO5・IO18・IO19・IO23 | IO38・IO39・IO40・IO1 |
+| CN1（ジョイスティック）SDA・SCL | IO21・IO22 | IO42・IO2 |
+| スピーカー・光センサー | IO26・IO34 | IO18・IO6 |
+| RGB LED 赤・緑・青 | IO4・IO16・IO17 | IO35・IO36・IO37（PSRAM のピンなので抵抗を外す） |
+
+- GND・3V3・EN・IO0・UART0 は同じ所に来るので、CH340C での書き込み・自動リセット・BOOT ボタンはそのまま使える。IO46（ストラッピングピン）は GND のパッドに載って Low になるが、通常の起動にも書き込みにも支障はない。
+- 液晶の SCK・MISO が S3 の USB の端子（IO19・IO20）に来るので、S3 の USB は使えない。シリアルは CH340C の UART0。
+- 描画は DMA なし（espdma は初代 ESP32 用）。速さ（実測、SPI 40MHz）：全画面塗りつぶし 73ms、文字 300 字 101ms。
+- フラッシュが 16MB あるので、cmd/picopad は 21 本全部入る。
+- 確かめたこと（2026-11-12）：s035_check の色・向き・枠・タッチ、cmd/games をタッチで遊ぶ、cmd/picopad の起動。
+
 ## ESP32-2432S028R（2.8インチ）
 
 Sunton ESP32-2432S028R（いわゆる Cheap Yellow Display）：ESP32（PSRAM なし）、2.8インチ 240×320 の ILI9341（SPI）、XPT2046 抵抗膜タッチ。横向き 320×240 で使う。micro USB が1つの版を前提にしている（USB が2つの版は色の反転が要る、または ST7789 という報告がある）。
@@ -311,7 +341,7 @@ make wasm PKG=./cmd/picopad && make serve   # ブラウザ
 
 - **ゲームオーバーで戻る**：ゲームの終わり（ゲームオーバー、勝負がついたとき）で、ゲームの最初の画面やデモに戻らずに、選ぶ画面に戻る（`picopad.Console.OneGame`）。テトリス・インベーダー・パックマン・Gate Runner はゲームオーバー（Gate Runner は最後の機が爆発したあと）、原子の陣取り・卵・カードゲームは勝者を見せてキーを押したあと、野球・フットサルは試合が終わってスコアボードのあと、チェスはチェックメイトのあと、PICTOR は Game Over の画面のあと。レイプターは C では最後のシールドのあと燃えたまま続くので、燃えてから 3 秒で戻る。
 - **Y で戻る**：ゲームの途中でも Y で戻る（ゲームの最初の画面の Y も）。PICTOR は Y でゲームのメニューを出して X。終わりのないゲーム（迷路・15 パズル・ライフゲーム・TV テニス・列車・スロット・カーレース）とパズルの続き（迷路・15 パズルは解くと次の問題）は Y で戻る。倉庫番は面から Y で面の一覧・集の一覧・作者の一覧と戻り、作者の一覧で Y。絵の 15 パズルはゲームで Y、絵の一覧で Y。
-- **フラッシュ**：ESP32-2432S028R・ESP32-3248S035C はフラッシュが 4MB で、21 本全部（約 5.1MB）は入らない。絵の 15 パズル（絵が 1.1MB）を外した 20 本で約 4.0MB（`cmd/picopad/nofifteen2.go`、ビルドタグ）。絵の 15 パズルは `examples/31_fifteen2` で単独で動く。ESP32-4827S043（16MB）とブラウザは 21 本（約 5.1MB）。4MB の基板の残りは約 150KB で、これ以上ゲームを足すと入らない。
+- **フラッシュ**：ESP32-2432S028R・ESP32-3248S035C（元の ESP32 モジュール）はフラッシュが 4MB で、21 本全部（約 5.1MB）は入らない。絵の 15 パズル（絵が 1.1MB）を外した 20 本で約 4.0MB（`cmd/picopad/nofifteen2.go`、ビルドタグ）。絵の 15 パズルは `examples/31_fifteen2` で単独で動く。ESP32-4827S043・ESP32-S3 に載せ替えた ESP32-3248S035C（16MB）とブラウザは 21 本（約 5.1MB）。4MB の基板の残りは約 150KB で、これ以上ゲームを足すと入らない。
 - **RAM**：ゲームを始めるたびにフレームバッファ（75KB）を作り直さないように、終わったゲームのフレームバッファを次の画面に回す（`picopad.Console.Close`）。
 
 ## Claude Code の使用量（cmd/ccmeter）

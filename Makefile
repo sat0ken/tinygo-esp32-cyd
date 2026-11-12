@@ -22,6 +22,10 @@ S035_PKGS := ./examples/s035_check ./examples/03_tinydraw ./examples/07_breakout
 	./examples/27_vegaslot ./examples/28_raptor ./examples/29_ants ./examples/30_ghostrac \
 	./examples/31_fifteen2 ./examples/32_pictor ./examples/33_zoom ./examples/34_mahjong ./examples/35_baseball ./examples/36_futsal ./cmd/ccmeter
 
+# The ESP32-3248S035C with its module replaced by an ESP32-S3-WROOM-1
+# (board/s035/pins_s3.go): the same programs.
+S035S3 := ./targets/esp32-3248s035c-s3.json
+
 # ESP32-2432S028R (2.8" ILI9341 320x240, XPT2046 touch): only the programs
 # that adapt to the screen size (the games need 480x272).
 S028      := ./targets/esp32-2432s028r.json
@@ -34,7 +38,7 @@ S028_PKGS := ./examples/s028_check ./examples/08_invaders ./examples/09_sudoku \
 	./examples/27_vegaslot ./examples/28_raptor ./examples/29_ants ./examples/30_ghostrac \
 	./examples/31_fifteen2 ./examples/32_pictor ./examples/33_zoom ./examples/34_mahjong ./examples/35_baseball ./examples/36_futsal ./cmd/ccmeter
 
-.PHONY: flash flash-noerase flash-slides flash-s035 flash-s028 monitor build examples examples-s035 examples-s028 wasm serve test test-browser update-golden slides clean
+.PHONY: flash flash-noerase flash-slides flash-s035 flash-s035s3 flash-s028 monitor build examples examples-s035 examples-s035s3 examples-s028 wasm serve test test-browser update-golden slides clean
 
 ## Board ------------------------------------------------------------------
 
@@ -93,6 +97,20 @@ flash-s035:
 # Build every program that runs on the ESP32-3248S035C (compile check).
 examples-s035:
 	@$(call esp32-check,$(S035),$(S035_PKGS))
+
+# The same board with an ESP32-S3 module.
+# make flash-s035s3 PKG=./examples/s035_check
+flash-s035s3:
+	tinygo flash -target=$(S035S3) $(PORTFLAG) -monitor $(PKG)
+
+# Build every program for it. The machine._UART0 check of esp32-check does
+# not apply: on the ESP32-S3 the runtime starts the UART from its own
+# package initializer (runtime_esp32s3.go), after machine's.
+examples-s035s3:
+	@mkdir -p out; for p in $(S035_PKGS); do \
+		echo "== $$p"; \
+		tinygo build -target=$(S035S3) -size short -o out/esp32-check.elf $$p || exit 1; \
+	done
 
 # esp32-check builds every program in $(2) for the ESP32 target $(1), and
 # checks that machine._UART0 is initialised at compile time (in .data, "d"):

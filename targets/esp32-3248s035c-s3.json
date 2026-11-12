@@ -1,0 +1,16 @@
+{
+	"inherits": [
+		"esp32s3-generic"
+	],
+	"build-tags": [
+		"esp32_3248s035c",
+		"esp32_3248s035c_s3"
+	],
+	"serial": "uart",
+	"flash-method": "esp32flash",
+	"ldflags": [
+		"--defsym=Cache_Invalidate_Addr=0x400016b0",
+		"--defsym=rom_Cache_Suspend_DCache=0x400018b4",
+		"--defsym=Cache_Resume_DCache=0x400018c0"
+	]
+}

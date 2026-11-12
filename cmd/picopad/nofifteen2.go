@@ -1,4 +1,4 @@
-//go:build esp32_2432s028r || esp32_3248s035c
+//go:build esp32_2432s028r || (esp32_3248s035c && !esp32_3248s035c_s3)
 
 package main
 

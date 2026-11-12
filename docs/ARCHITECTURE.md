@@ -811,6 +811,20 @@ ESP32（無印、PSRAM なし）、ST7796（320×480、SPI）、GT911（静電�
 - 使い方は import を `tinygo.org/x/tinyfont/freesans` から `github.com/sat0ken/tinygo-cyd/romfont/freesans` に変えるだけ（名前は同じ）。新しい書体が要るときは [tools/fontgen](../tools/fontgen/main.go) の一覧に足して `go generate ./romfont`。
 - [boot_s035.go](../platform/boot_s035.go)：前回の実行が例外で再起動していたら、起動時にその原因と番地を表示する（TinyGo の例外ハンドラが RTC のレジスタに残す）。電源投入以外のリセットなら、その理由も表示する。
 
+### モジュールを ESP32-S3 に載せ替えた基板
+
+ESP32-WROOM-32 を外し、同じパッドに ESP32-S3-WROOM-1-N16R8 を載せた基板（ターゲット [esp32-3248s035c-s3](../targets/esp32-3248s035c-s3.json)）。ピンの対応と手順は README。
+
+- **ビルドタグ**：ターゲットは `esp32_3248s035c` と `esp32_3248s035c_s3` の両方を持つ。前者で S035 向けのコード（platform_s035.go、viewport の窓、picopad の 4MB 版の選択など）がそのまま選ばれ、後者で違う所だけを分ける。
+  - ピン：[pins_esp32.go](../board/s035/pins_esp32.go)（`!esp32_3248s035c_s3`）と [pins_s3.go](../board/s035/pins_s3.go)。それ以外の値（MADCTL、タッチの補正値など）は共通の [s035.go](../board/s035/s035.go)。
+  - SPI：[s035_esp32.go](../platform/s035_esp32.go) は `machine.SPI2` を espdma で包む。[s035_s3.go](../platform/s035_s3.go) は `machine.SPI0`（S3 のハードウェア SPI2 = FSPI）をそのまま使う（DMA なし、`DrawRGBBitmap8Async` はすぐ描く）。
+  - S043 用の [platform_esp32s3.go](../platform/platform_esp32s3.go) は `esp32s3 && !esp32_3248s035c` にした。
+  - picopad は 16MB あるので絵の 15 パズルも入れる（`fifteen2.go` のタグ）。
+- **USB の端子を GPIO にする**：液晶の SCK・MISO が IO19・IO20（USB の D−・D+）に来る。リセット直後、この 2 本は USB Serial/JTAG のもの（`USB_DEVICE.CONF0` の `USB_PAD_ENABLE`、D+ のプルアップ付き）で、IO MUX を GPIO にしても USB の PHY がつながったまま。ESP-IDF は `gpio_ll_iomux_func_sel` でこの 2 本を選ぶときに `USB_PAD_ENABLE` を消すが、TinyGo の `Pin.Configure` はしない。`prepareLCDPins` が SPI の設定の前に消す。
+- **シリアルの受信**：TinyGo 0.44 の ESP32-S3 の UART は送るだけで、受信の割り込みがない（`machine_esp32s3.go`）。`machine.Serial.Buffered()` はいつも 0。[serial_esp32s3.go](../platform/serial_esp32s3.go) の `platform.SerialInput()` は UART0 の受信 FIFO（128 バイト）を直接読む（`STATUS` の `RXFIFO_CNT` と `FIFO`）。s035_check のコマンドはこれで受ける。S043 の cmd/ccmeter はまだ `machine.Serial` を読んでいる。
+- **UART0 の初期化の順番**：S3 のランタイム（`runtime_esp32s3.go`）は `machine.InitSerial()` を runtime パッケージの `init` で呼ぶ。runtime は machine を import するので、`_UART0` の初期化のあとになる。上の「起動時に止まった原因」は起きないので、`make examples-s035s3` は `_UART0` の置き場所を確かめない（S3 では `_UART0` が ELF に残らないこともある）。
+- 液晶の ID の読み出しは、S3 の SPI ドライバが `USR_MISO` を立てるので一度で試せるが、全部 `ff` で読めない（元の基板では 0）。MISO が液晶につながっていないのは同じらしい。
+
 ### 実機で確かめること（s035_check）
 
 [s035_check](../examples/s035_check/main.go) を書き込み、ログ・色の帯・向き・タッチを見る。シリアルのコマンドで MADCTL（`r` 180度、`o` 赤青）・反転（`i`）を切り替えられ、`k` で4隅のキャリブレーション、`f`・`t` で描画速度を測る。合っていたら値を board/s035 に書く。テスト画面・コマンド・キャリブレーションは s028_check と共通で、[internal/panelcheck](../internal/panelcheck/panelcheck.go) にある。
@@ -1062,7 +1076,7 @@ PicoLibSDK の移植ではなく、picopad の上に作ったオリジナルの�
 - レイプターは C では最後のシールドのあと機体が燃えたまま続く（ゲームオーバーの画面がない）。`OneGame` では燃えてから 3 秒（30 フレーム）で戻る。
 - 選ぶ画面とゲームは順番に `picopad.New` で作る。ゲームのフレームバッファ（75KB）と送信用のバッファ（10KB）を毎回作ると、前のものを GC が回収するまでヒープに 2 つ並ぶことがあるので、`Close` で次の `New` に回す（`spare`。パッケージの変数なので実行時の初期化はない）。
 - 選ぶ画面はタッチを 3×3 のボタンにしないで（`New` に touch を渡さない）、自分で読んで名前をタップで選ぶ。ゲームから戻ったときにまだ触れているタッチは、一度離すまで数えない。
-- **フラッシュ**：19 本の画像と面のデータは約 4.4MB（倉庫番の面と解答 1.2MB、PICTOR 1.3MB、絵の 15 パズル 1.1MB、カーレース 0.4MB …）。ESP32（S028・S035）はフラッシュが 4MB で、DROM（rodata）も 4MB までなので、全部ではリンクで「section '.rodata' will not fit in region 'DROM'」になる。絵の 15 パズルをビルドタグ（`esp32_2432s028r`・`esp32_3248s035c`）で外すと、イメージは約 3.7MB（野球とフットサルを足して約 4.0MB、残りは約 150KB）。ESP32-4827S043（ESP32-S3、16MB）では 19 本で約 4.7MB（野球とフットサルを足した 21 本で約 5.1MB）になる。ESP32-S3 の ROM が大きい rodata のセグメントを拒むという 10.1 の制限には、TinyGo 0.44 では当たらない（19 本入りの cmd/picopad を実機で動かし、テトリス・ライフゲーム・絵の 15 パズルなどを遊んで確かめた）。
+- **フラッシュ**：19 本の画像と面のデータは約 4.4MB（倉庫番の面と解答 1.2MB、PICTOR 1.3MB、絵の 15 パズル 1.1MB、カーレース 0.4MB …）。ESP32（S028・S035）はフラッシュが 4MB で、DROM（rodata）も 4MB までなので、全部ではリンクで「section '.rodata' will not fit in region 'DROM'」になる。絵の 15 パズルをビルドタグ（`esp32_2432s028r`・`esp32_3248s035c`。ESP32-S3 に載せ替えた S035 は 16MB なので外さない）で外すと、イメージは約 3.7MB（野球とフットサルを足して約 4.0MB、残りは約 150KB）。ESP32-4827S043（ESP32-S3、16MB）では 19 本で約 4.7MB（野球とフットサルを足した 21 本で約 5.1MB）になる。ESP32-S3 の ROM が大きい rodata のセグメントを拒むという 10.1 の制限には、TinyGo 0.44 では当たらない（19 本入りの cmd/picopad を実機で動かし、テトリス・ライフゲーム・絵の 15 パズルなどを遊んで確かめた）。
 
 ### テスト
 

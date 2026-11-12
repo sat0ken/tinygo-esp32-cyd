@@ -11,9 +11,14 @@
 // the board), a speaker connector, and TP-C for the touch panel (GND, SDA,
 // SCL, RST, INT, VDD).
 //
+// The same board with the module replaced by an ESP32-S3-WROOM-1 is
+// supported too (target esp32-3248s035c-s3, build tag esp32_3248s035c_s3):
+// the GPIO numbers differ (pins_s3.go), everything else is the same.
+// The GPIO numbers of the original module are in pins_esp32.go.
+//
 // The panel is used in landscape, 480x320. The ESP32 has no PSRAM and too
 // little RAM for a frame buffer, so drawing goes straight to the panel over
-// SPI (package st7796).
+// SPI (package spilcd).
 //
 // Nothing here depends on the machine package, so the constants can be used
 // from host tests as well.
@@ -38,18 +43,6 @@ const (
 	WindowH = 272
 )
 
-// ST7796 on SPI2 (HSPI). RST is not connected: the driver resets the
-// panel with the software reset command.
-const (
-	PinSCK  = 14
-	PinMOSI = 13
-	PinMISO = 12
-	PinCS   = 15
-	PinDC   = 2
-
-	PinBacklight = 27 // high = on
-)
-
 // SPIFrequency is the SPI clock for drawing. LovyanGFX uses 40MHz on this
 // board; if the picture shows noise, lower it to 20MHz.
 const SPIFrequency = 40_000_000
@@ -66,19 +59,13 @@ const MADCTL = 0x28
 // (checked on the board).
 const Invert = false
 
-// GT911 capacitive touch controller on I2C0. INT is GPIO21 according to
-// rzeldent and GPIO36 according to lang-ship; it is not used (the driver
-// polls), and neither is RST (GPIO25), so the controller keeps the I2C
-// address it chose at power-on (0x5D or 0x14; both are tried).
+// The GT911 capacitive touch controller is on I2C0 (pins in pins_*.go).
+// INT is not used (the driver polls), and RST only when the controller
+// does not answer, so it keeps the I2C address it chose at power-on (0x5D
+// or 0x14; both are tried).
 // On the board (2026-10-18): address 0x5D, product "911", firmware 0x1060,
 // resolution 320x480, config version 0x69.
-const (
-	PinTouchSDA = 33
-	PinTouchSCL = 32
-	PinTouchRST = 25
-
-	TouchI2CFrequency = 400_000
-)
+const TouchI2CFrequency = 400_000
 
 // Touch calibration: raw GT911 readings at the left/right and top/bottom
 // edges of the landscape screen (see touchcal.Calibration).
@@ -101,38 +88,4 @@ const (
 	TouchRawYTop    = 319
 	TouchRawYBottom = 0
 	TouchSwapXY     = true
-)
-
-// microSD slot on its own SPI bus (VSPI), not shared with the display.
-const (
-	PinSDCS   = 5
-	PinSDMOSI = 23
-	PinSDSCK  = 18
-	PinSDMISO = 19
-)
-
-// Other parts of the board (not used yet).
-const (
-	PinLEDRed   = 4 // RGB LED, low = on
-	PinLEDGreen = 16
-	PinLEDBlue  = 17
-	PinSpeaker  = 26 // amplifier input
-	PinLight    = 34 // CdS light sensor (ADC)
-)
-
-// Mini joystick module (package minijoy) as a game controller: I2C on
-// connector CN1 (GND, IO22, IO21, 3.3V from the top), SDA on IO21 and SCL
-// on IO22 (checked on the board with a bit-banged scan; the other way
-// round finds nothing). The module's order is G, V, SDA, SCL, so the wires
-// cross. IO21 is also the GT911's INT according to rzeldent; the touch
-// still works, and the GT911's address is found either way.
-const (
-	PinJoySDA = 21
-	PinJoySCL = 22
-)
-
-// Serial console: UART0 (GPIO1 TX / GPIO3 RX) through the CH340C USB-UART.
-const (
-	PinUARTTX = 1
-	PinUARTRX = 3
 )

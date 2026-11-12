@@ -1,4 +1,4 @@
-//go:build esp32s3
+//go:build esp32s3 && !esp32_3248s035c
 
 package platform
 

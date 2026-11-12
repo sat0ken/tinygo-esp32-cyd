@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/sat0ken/tinygo-cyd/board/s035"
-	"github.com/sat0ken/tinygo-cyd/espdma"
 	"github.com/sat0ken/tinygo-cyd/gt911"
 	"github.com/sat0ken/tinygo-cyd/hal"
 	"github.com/sat0ken/tinygo-cyd/spilcd"
@@ -18,9 +17,10 @@ import (
 	"github.com/sat0ken/tinygo-cyd/viewport"
 )
 
-// The ESP32-3248S035C: ST7796 on SPI2 and GT911 on I2C0 (package
+// The ESP32-3248S035C: ST7796 on SPI and GT911 on I2C0 (package
 // board/s035). There is no frame buffer: drawing goes straight to the
-// panel (package spilcd).
+// panel (package spilcd). The SPI bus depends on the chip: s035_esp32.go
+// for the original module, s035_s3.go for the board with an ESP32-S3.
 
 var (
 	screen *spilcd.Device
@@ -38,7 +38,8 @@ func InitScreen() (*spilcd.Device, error) {
 	if screen != nil {
 		return screen, nil
 	}
-	spi := machine.SPI2
+	spi := lcdSPI
+	prepareLCDPins()
 	cfg := machine.SPIConfig{
 		SCK: machine.Pin(s035.PinSCK), SDO: machine.Pin(s035.PinMOSI), SDI: machine.Pin(s035.PinMISO),
 		Frequency: 10_000_000,
@@ -52,7 +53,7 @@ func InitScreen() (*spilcd.Device, error) {
 	cs.Configure(machine.PinConfig{Mode: machine.PinOutput})
 	cs.Set(true)
 
-	d := spilcd.New(espdma.New(spi), dc, cs) // DrawRGBBitmap8Async sends with DMA
+	d := spilcd.New(lcdBus(spi), dc, cs)
 	d.Configure(spilcd.Config{Width: s035.Width, Height: s035.Height, MADCTL: s035.MADCTL, Invert: s035.Invert, Init: spilcd.InitST7796})
 	cfg.Frequency = s035.SPIFrequency
 	if err := spi.Configure(cfg); err != nil {
@@ -118,6 +119,7 @@ func InitTouch() (*gt911.Touch, error) {
 // GPIO.ENABLE_W1TS.Set(1 << pin), which is 0 for pin 32 and up (they are
 // in ENABLE1), so SCL (32) and SDA (33) of this board would never be
 // driven. The bits stay set when the driver configures the pins again.
+// (With the ESP32-S3 module the touch pins are below 32: nothing to do.)
 func enableHighPins(pins ...uint8) {
 	for _, p := range pins {
 		if p >= 32 {
@@ -169,7 +171,7 @@ func initBoth() (*spilcd.Device, hal.Touch, error) {
 
 var blPin = machine.Pin(s035.PinBacklight)
 
-// SetBacklight turns the backlight (GPIO27) on (percent > 0) or off. The
+// SetBacklight turns the backlight (s035.PinBacklight) on (percent > 0) or off. The
 // brightness cannot be set yet: TinyGo has no PWM for the ESP32.
 func SetBacklight(percent int) {
 	blPin.Configure(machine.PinConfig{Mode: machine.PinOutput})
